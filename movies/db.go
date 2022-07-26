@@ -17,3 +17,4 @@ func (m *Short)writeToDb(ctx context.Context, firestoreClient *firestore.Client)
 		log.Fatalln("error set data", err)
 	}	
 }
+

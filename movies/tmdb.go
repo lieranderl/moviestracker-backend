@@ -72,7 +72,7 @@ func ChannelToMoviesToDb(ctx context.Context, cancelFunc context.CancelFunc, val
 			if ok {
 				if len(m.OriginalTitle) > 0 {
 
-					m.setQualityVector()
+					m.updateMoviesAttribs()
 					m.writeToDb(ctx, firestoreClient)
 
 					i+=1

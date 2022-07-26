@@ -18,7 +18,11 @@ func HandleRequest(urls []string, tmdbApiKey, firebaseProject, firebaseConfig st
 	fmt.Println("Start Test_func!")
 	start := time.Now()
 	pipeline := executor.Init(urls, tmdbApiKey, firebaseProject, firebaseConfig)
-	pipeline.RunTrackersSearchPipilene().ConvertTorrentsToMovieShort().TmdbAndFirestore()
+	pipeline.
+		DeleteOldMoviesFromDb().
+		RunTrackersSearchPipilene().
+		ConvertTorrentsToMovieShort().
+		TmdbAndFirestore()
 	elapsed := time.Since(start)
 	log.Printf("ALL took %s", elapsed)
 	return "Done!", nil

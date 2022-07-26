@@ -3,12 +3,15 @@ package executor
 import (
 	"context"
 	"log"
+	"time"
 
-	"cloud.google.com/go/firestore"
 	"moviestracker/movies"
 	"moviestracker/rutor"
 	"moviestracker/torrents"
 	"moviestracker/tracker"
+
+	"cloud.google.com/go/firestore"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
 
@@ -30,6 +33,43 @@ func Init(urls []string, tmdbapikey string, firebaseProject string, firebaseconf
 	goption := option.WithCredentialsJSON([]byte(firebaseconfig))
 	tp.config = Config{urls: urls, tmdbApiKey: tmdbapikey, firebaseProject: firebaseProject, goption: goption}
 	return tp
+}
+
+func(p *TrackersPipeline) DeleteOldMoviesFromDb() *TrackersPipeline {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	firestoreClient, err := firestore.NewClient(ctx, p.config.firebaseProject, p.config.goption)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	moviesListRef := firestoreClient.Collection("latesttorrentsmovies").Where("LastTimeFound", "<", time.Now().Add(-time.Hour*24*30*3))
+	iter := moviesListRef.Documents(ctx)
+	batch := firestoreClient.Batch()
+	numDeleted := 0
+	for {
+			doc, err := iter.Next()
+			if err == iterator.Done {
+					break
+			}
+			if err != nil {
+				log.Fatalln("error delete data:", err)
+			}
+
+			batch.Delete(doc.Ref)
+			numDeleted++
+	}
+
+	// If there are no documents to delete,
+	// the process is over.
+	if numDeleted == 0 {
+			return p
+	}
+
+	_, err = batch.Commit(ctx)
+	if err != nil {
+		log.Fatalln("error delete data:", err)
+	}
+	return p
 }
 
 func (p *TrackersPipeline) ConvertTorrentsToMovieShort() *TrackersPipeline {
