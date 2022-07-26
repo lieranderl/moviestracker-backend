@@ -2,7 +2,6 @@ package executor
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"moviestracker/movies"
@@ -26,6 +25,7 @@ type TrackersPipeline struct {
 	torrents []*torrents.Torrent
 	movies   []*movies.Short
 	config   Config
+	Errors	 []error
 }
 
 func Init(urls []string, tmdbapikey string, firebaseProject string, firebaseconfig string) *TrackersPipeline {
@@ -36,11 +36,14 @@ func Init(urls []string, tmdbapikey string, firebaseProject string, firebaseconf
 }
 
 func(p *TrackersPipeline) DeleteOldMoviesFromDb() *TrackersPipeline {
+	if len(p.Errors) > 0 {
+		return p
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	firestoreClient, err := firestore.NewClient(ctx, p.config.firebaseProject, p.config.goption)
 	if err != nil {
-		log.Fatalln(err)
+		p.Errors = append(p.Errors, err)
 	}
 	moviesListRef := firestoreClient.Collection("latesttorrentsmovies").Where("LastTimeFound", "<", time.Now().Add(-time.Hour*24*30*3))
 	iter := moviesListRef.Documents(ctx)
@@ -52,7 +55,8 @@ func(p *TrackersPipeline) DeleteOldMoviesFromDb() *TrackersPipeline {
 					break
 			}
 			if err != nil {
-				log.Fatalln("error delete data:", err)
+				p.Errors = append(p.Errors, err)
+				return p
 			}
 
 			batch.Delete(doc.Ref)
@@ -67,12 +71,15 @@ func(p *TrackersPipeline) DeleteOldMoviesFromDb() *TrackersPipeline {
 
 	_, err = batch.Commit(ctx)
 	if err != nil {
-		log.Fatalln("error delete data:", err)
+		p.Errors = append(p.Errors, err)
 	}
 	return p
 }
 
 func (p *TrackersPipeline) ConvertTorrentsToMovieShort() *TrackersPipeline {
+	if len(p.Errors) > 0 {
+		return p
+	}
 	ms := make([]*movies.Short, 0)
 	hash_list := make([]string, 0)
 	i := 0
@@ -112,18 +119,26 @@ func (p *TrackersPipeline) ConvertTorrentsToMovieShort() *TrackersPipeline {
 
 }
 
-func (p *TrackersPipeline) TmdbAndFirestore() {
+func (p *TrackersPipeline) TmdbAndFirestore() *TrackersPipeline{
+	if len(p.Errors) > 0 {
+		return p
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	firestoreClient, err := firestore.NewClient(ctx, p.config.firebaseProject, p.config.goption)
 	if err != nil {
-		log.Fatalln(err)
+		p.Errors = append(p.Errors, err)
+		return p
 	}
 	movieChan, errorChan := movies.MoviesPipelineStream(ctx, p.movies, p.config.tmdbApiKey, 20)
 	movies.ChannelToMoviesToDb(ctx, cancel, movieChan, errorChan, firestoreClient)
+	return p
 }
 
 func (p *TrackersPipeline) RunTrackersSearchPipilene() *TrackersPipeline {
+	if len(p.Errors) > 0 {
+		return p
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	config := tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParsePage}
@@ -135,6 +150,11 @@ func (p *TrackersPipeline) RunTrackersSearchPipilene() *TrackersPipeline {
 	// torrentsResults2, kinozalErrors := kinozalTracker.BuildTorrentListStream(ctx)
 	// allTorrents := pipeline.Merge(ctx, torrentsResults)
 	// allErrors := pipeline.Merge(ctx, rutorErrors)
-	p.torrents = torrents.MergeTorrentChannlesToSlice(ctx, cancel, torrentsResults, rutorErrors)
+	ts, err := torrents.MergeTorrentChannlesToSlice(ctx, cancel, torrentsResults, rutorErrors)
+	if err != nil {
+		p.Errors = append(p.Errors, err)
+	} else {
+		p.torrents = ts
+	}
 	return p
 }

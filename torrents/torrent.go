@@ -26,24 +26,25 @@ type Torrent struct {
 
 
 
-func MergeTorrentChannlesToSlice(ctx context.Context, cancelFunc context.CancelFunc, values <-chan []*Torrent, errors <-chan error) []*Torrent{
+func MergeTorrentChannlesToSlice(ctx context.Context, cancelFunc context.CancelFunc, values <-chan []*Torrent, errors <-chan error) ([]*Torrent, error) {
 	torrents:= make([]*Torrent,0)
 	for {
 		select {
 		case <-ctx.Done():
 			log.Print(ctx.Err().Error())
-			return torrents
+			return torrents, ctx.Err()
 		case err := <-errors:
 			if err != nil {
 				log.Println("error: ", err.Error())
 				cancelFunc()
+				return torrents, err
 			}
 		case res, ok := <-values:
 			if ok {
 				torrents = append(torrents, res...)
 			} else {
 				log.Print("done")
-				return torrents
+				return torrents, nil
 			}
 		}
 	}

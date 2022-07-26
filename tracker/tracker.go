@@ -2,7 +2,6 @@ package tracker
 
 import (
 	"context"
-	"log"
 
 	"moviestracker/pipeline"
 	"moviestracker/torrents"
@@ -26,7 +25,9 @@ func Init(config Config) *Tracker {
 func (t Tracker)TorrentsPipelineStream(ctx context.Context) (chan []*torrents.Torrent, chan error){
 	urlStream, err := pipeline.Producer(ctx, t.urls)
 	if err != nil {
-		log.Fatal(err)
+		tc := make(chan []*torrents.Torrent,)
+		ec := make(chan error)
+		return tc, ec
 	}
 	torrents_chan, errors := pipeline.Step(ctx, urlStream, t.trackerParser, 10)
 	return torrents_chan, errors

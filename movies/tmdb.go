@@ -49,7 +49,9 @@ func (tmdbapi *TMDb)FetchMovieDetails(m *Short) (*Short, error) {
 func MoviesPipelineStream(ctx context.Context, movies []*Short, tmdbkey string, limit int64) (chan *Short, chan error){
 	m, err := pipeline.Producer(ctx, movies)
 	if err != nil {
-		log.Fatal(err)
+		mc := make(chan *Short)
+		ec := make(chan error)
+		return mc, ec
 	}
 	mytmdb := TMDBInit(tmdbkey)
 	movie_chan, errors := pipeline.Step(ctx, m, mytmdb.FetchMovieDetails, limit)
@@ -74,7 +76,6 @@ func ChannelToMoviesToDb(ctx context.Context, cancelFunc context.CancelFunc, val
 
 					m.updateMoviesAttribs()
 					m.writeToDb(ctx, firestoreClient)
-
 					i+=1
 				}
 			} else {
