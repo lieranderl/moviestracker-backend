@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -19,17 +18,12 @@ func HandleRequest(urls []string, tmdbApiKey, firebaseProject, firebaseConfig st
 	fmt.Println("Start Test_func!")
 	start := time.Now()
 	pipeline := executor.Init(urls, tmdbApiKey, firebaseProject, firebaseConfig)
-	pipeline.DeleteOldMoviesFromDb().
+	err := pipeline.DeleteOldMoviesFromDb().
 			 RunTrackersSearchPipilene().
 			 ConvertTorrentsToMovieShort().
-			 TmdbAndFirestore()
-	if len(pipeline.Errors) > 0 {
-		errorStrSlice := make([]string,0)
-		for _, err := range pipeline.Errors {
-			errorStrSlice = append(errorStrSlice, err.Error())
-		}
-		err := errors.New(strings.Join(errorStrSlice, ",\n"))
-		log.Println(err)
+			 TmdbAndFirestore().
+			 HandleErrors()
+	if err != nil {
 		return "Failed!", err
 	}
 	elapsed := time.Since(start)

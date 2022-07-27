@@ -2,6 +2,9 @@ package executor
 
 import (
 	"context"
+	"errors"
+	"log"
+	"strings"
 	"time"
 
 	"moviestracker/movies"
@@ -157,4 +160,17 @@ func (p *TrackersPipeline) RunTrackersSearchPipilene() *TrackersPipeline {
 		p.torrents = ts
 	}
 	return p
+}
+
+func (p *TrackersPipeline)HandleErrors() error{
+	var err error
+	if len(p.Errors) > 0 {
+		errorStrSlice := make([]string,0)
+		for _, err := range p.Errors {
+			errorStrSlice = append(errorStrSlice, err.Error())
+		}
+		err := errors.New(strings.Join(errorStrSlice, ",\n"))
+		log.Println(err)
+	}
+	return err
 }
