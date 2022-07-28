@@ -3,7 +3,6 @@ package torrents
 import (
 	"context"
 	"log"
-	"time"
 )
 
 type Torrent struct {
@@ -14,7 +13,7 @@ type Torrent struct {
 	Year         string
 	Size         float32
 	Magnet       string
-	Date         time.Time
+	Date         string
 	K4           bool
 	FHD          bool
 	HDR          bool

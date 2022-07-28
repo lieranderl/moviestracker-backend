@@ -77,16 +77,16 @@ func main() {
     if err != nil {
         log.Fatal("Error loading .env file")
     }
-	// CollectLatestMoviesHandler()
+	CollectLatestMoviesHandler()
 
 	////MANUAL TorrentsForMovieHandler
-	search := events.APIGatewayProxyRequest{QueryStringParameters: map[string]string{"MovieName":"Девушка в поезде","Year":"2016"}}
-	res, err := TorrentsForMovieHandler(search)
-	if err != nil {
-		fmt.Println("ERROR:")
-		fmt.Println(err)
-	}
-	fmt.Printf(res.Body)
+	// search := events.APIGatewayProxyRequest{QueryStringParameters: map[string]string{"MovieName":"Девушка в поезде","Year":"2016"}}
+	// res, err := TorrentsForMovieHandler(search)
+	// if err != nil {
+	// 	fmt.Println("ERROR:")
+	// 	fmt.Println(err)
+	// }
+	// fmt.Printf(res.Body)
 	///////
 	
 

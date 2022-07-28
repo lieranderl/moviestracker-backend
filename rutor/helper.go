@@ -28,7 +28,7 @@ var fullMonth = map[string]string{
 	"Дек": "Декабря",
 }
 
-func parseDate(text string) time.Time {
+func parseDate(text string) string {
 	stringDate := ""
 	dateList := strings.Fields(text)
 	for k, v := range fullMonth {
@@ -41,5 +41,6 @@ func parseDate(text string) time.Time {
 		}
 	}
 	ts, _ := monday.ParseInLocation("2 January 2006", stringDate, time.Now().UTC().Location(), monday.LocaleRuRU)
-	return ts
+
+	return ts.Format("2006-01-02T15:04:05.000Z")
 }
