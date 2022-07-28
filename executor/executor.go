@@ -25,8 +25,8 @@ type Config struct {
 }
 
 type TrackersPipeline struct {
-	torrents []*torrents.Torrent
-	movies   []*movies.Short
+	Torrents []*torrents.Torrent
+	Movies   []*movies.Short
 	config   Config
 	Errors	 []error
 }
@@ -86,7 +86,7 @@ func (p *TrackersPipeline) ConvertTorrentsToMovieShort() *TrackersPipeline {
 	ms := make([]*movies.Short, 0)
 	hash_list := make([]string, 0)
 	i := 0
-	for _, movietorr := range p.torrents {
+	for _, movietorr := range p.Torrents {
 		found := false
 		for _, h := range hash_list {
 			if h == movietorr.Hash {
@@ -117,7 +117,7 @@ func (p *TrackersPipeline) ConvertTorrentsToMovieShort() *TrackersPipeline {
 		}
 
 	}
-	p.movies = ms
+	p.Movies = ms
 	return p
 
 }
@@ -133,7 +133,7 @@ func (p *TrackersPipeline) TmdbAndFirestore() *TrackersPipeline{
 		p.Errors = append(p.Errors, err)
 		return p
 	}
-	movieChan, errorChan := movies.MoviesPipelineStream(ctx, p.movies, p.config.tmdbApiKey, 20)
+	movieChan, errorChan := movies.MoviesPipelineStream(ctx, p.Movies, p.config.tmdbApiKey, 20)
 	movies.ChannelToMoviesToDb(ctx, cancel, movieChan, errorChan, firestoreClient)
 	return p
 }
@@ -144,6 +144,7 @@ func (p *TrackersPipeline) RunTrackersSearchPipilene() *TrackersPipeline {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	log.Println(p.config.urls)
 	config := tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParsePage}
 	rutorTracker := tracker.Init(config)
 	// kinozalTracker := new(tracker.Tracker)
@@ -157,7 +158,7 @@ func (p *TrackersPipeline) RunTrackersSearchPipilene() *TrackersPipeline {
 	if err != nil {
 		p.Errors = append(p.Errors, err)
 	} else {
-		p.torrents = ts
+		p.Torrents = ts
 	}
 	return p
 }
