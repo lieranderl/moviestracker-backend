@@ -38,7 +38,9 @@ func (tmdbapi *TMDb)FetchMovieDetails(m *Short) (*Short, error) {
 		return nil, err
 	}
 	if len(r.Results) > 0 {
-		m.MovieShort = r.Results[0]
+		if (m.Searchname == r.Results[0].OriginalTitle || m.Searchname == r.Results[0].Title) && m.Year == r.Results[0].ReleaseDate[:4] {
+			m.MovieShort = r.Results[0]
+		}
 	}
 	// m.ID = int(rand.Int63())
 	// m.OriginalTitle="pizda"
@@ -75,7 +77,7 @@ func ChannelToMoviesToDb(ctx context.Context, cancelFunc context.CancelFunc, val
 				if len(m.OriginalTitle) > 0 {
 
 					m.updateMoviesAttribs()
-					m.writeToDb(ctx, firestoreClient)
+					m.writeMovieToDb(ctx, firestoreClient)
 					i+=1
 				}
 			} else {

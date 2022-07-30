@@ -45,12 +45,17 @@ func (m *Short) setQualityVector(){
 
 func (m *Short) setLastimeFound(){
 	for _, t := range m.Torrents {
-	
+		
+		if t.Date == "" {
+			t.Date = time.Now().String()
+		}
 		layout := "2006-01-02T15:04:05.000Z"
 		timeformat, _ := time.Parse(layout, t.Date)
 
 		if timeformat.After(m.LastTimeFound) {
 			m.LastTimeFound = timeformat
 		}
+		
+		
 	}
 }

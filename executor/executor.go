@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
+	// "moviestracker/imdbratingupdater"
 	"moviestracker/movies"
-	"moviestracker/rutor"
+	"moviestracker/tapochek"
 	"moviestracker/torrents"
 	"moviestracker/tracker"
 
@@ -48,7 +49,7 @@ func(p *TrackersPipeline) DeleteOldMoviesFromDb() *TrackersPipeline {
 	if err != nil {
 		p.Errors = append(p.Errors, err)
 	}
-	moviesListRef := firestoreClient.Collection("latesttorrentsmovies").Where("LastTimeFound", "<", time.Now().Add(-time.Hour*24*30*3))
+	moviesListRef := firestoreClient.Collection("latesttorrentsmovies").Where("ReleaseDate", "<", time.Now().Add(-time.Hour*24*30*6).Format("2006-01-02"))
 	iter := moviesListRef.Documents(ctx)
 	batch := firestoreClient.Batch()
 	numDeleted := 0
@@ -133,27 +134,35 @@ func (p *TrackersPipeline) TmdbAndFirestore() *TrackersPipeline{
 		p.Errors = append(p.Errors, err)
 		return p
 	}
+	// imdbratingupdater.Imdbratingupdater(ctx, firestoreClient)
 	movieChan, errorChan := movies.MoviesPipelineStream(ctx, p.Movies, p.config.tmdbApiKey, 20)
 	movies.ChannelToMoviesToDb(ctx, cancel, movieChan, errorChan, firestoreClient)
 	return p
 }
 
+
 func (p *TrackersPipeline) RunTrackersSearchPipilene() *TrackersPipeline {
 	if len(p.Errors) > 0 {
 		return p
 	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	log.Println(p.config.urls)
-	config := tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParsePage}
-	rutorTracker := tracker.Init(config)
+	// config := tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParsePage}
+	// rutorTracker := tracker.Init(config)
 	// kinozalTracker := new(tracker.Tracker)
 	// kinozalTracker.Url = rutor.Kinoz_URLS
 	// kinozalTracker.TrackerParser = rutor.KParsePage
-	torrentsResults, rutorErrors := rutorTracker.TorrentsPipelineStream(ctx)
+	// torrentsResults, rutorErrors := rutorTracker.TorrentsPipelineStream(ctx)
 	// torrentsResults2, kinozalErrors := kinozalTracker.BuildTorrentListStream(ctx)
 	// allTorrents := pipeline.Merge(ctx, torrentsResults)
 	// allErrors := pipeline.Merge(ctx, rutorErrors)
+
+	config := tracker.Config{Urls: p.config.urls, TrackerParser: tapochek.ParsePage}
+	tapochekTracker := tracker.Init(config)
+	torrentsResults, rutorErrors := tapochekTracker.TorrentsPipelineStream(ctx)
+	
 	ts, err := torrents.MergeTorrentChannlesToSlice(ctx, cancel, torrentsResults, rutorErrors)
 	if err != nil {
 		p.Errors = append(p.Errors, err)

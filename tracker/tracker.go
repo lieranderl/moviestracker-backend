@@ -29,6 +29,6 @@ func (t Tracker)TorrentsPipelineStream(ctx context.Context) (chan []*torrents.To
 		ec := make(chan error)
 		return tc, ec
 	}
-	torrents_chan, errors := pipeline.Step(ctx, urlStream, t.trackerParser, 10)
+	torrents_chan, errors := pipeline.Step(ctx, urlStream, t.trackerParser, 2)
 	return torrents_chan, errors
 }

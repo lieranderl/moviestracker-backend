@@ -23,14 +23,15 @@ func CollectLatestMoviesHandler() (string, error) {
 	fmt.Println("Start Test_func!")
 	start := time.Now()
 	pipeline := executor.Init(
-	strings.Split(os.Getenv("RUTOR_URLS"), ","), 
+	strings.Split(os.Getenv("T_URLS"), ","), 
 				  os.Getenv("TMDBAPIKEY"), 
 				  os.Getenv("FIREBASE_PROJECT"), 
 				  os.Getenv("FIREBASECONFIG"))
-	err := pipeline.DeleteOldMoviesFromDb().
+	err := pipeline.
 			 RunTrackersSearchPipilene().
 			 ConvertTorrentsToMovieShort().
 			 TmdbAndFirestore().
+			 DeleteOldMoviesFromDb().
 			 HandleErrors()
 	if err != nil {
 		return "Failed!", err
@@ -77,10 +78,20 @@ func main() {
     if err != nil {
         log.Fatal("Error loading .env file")
     }
+
+	// m, err := tapochek.ParsePage("https://tapochek.net/viewforum.php?f=431&start=0")
+	// if err != nil {
+    //     log.Fatal(err)
+    // }
+
+	// for _, i:=range m {
+	// 	log.Println(i)
+	// }
+	
 	CollectLatestMoviesHandler()
 
 	////MANUAL TorrentsForMovieHandler
-	// search := events.APIGatewayProxyRequest{QueryStringParameters: map[string]string{"MovieName":"Девушка в поезде","Year":"2016"}}
+	// search := events.APIGatewayProxyRequest{QueryStringParameters: map[string]string{"MovieName":"Время","Year":"2021"}}
 	// res, err := TorrentsForMovieHandler(search)
 	// if err != nil {
 	// 	fmt.Println("ERROR:")
