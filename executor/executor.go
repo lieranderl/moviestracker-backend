@@ -9,6 +9,7 @@ import (
 
 	// "moviestracker/imdbratingupdater"
 	"moviestracker/movies"
+	"moviestracker/rutor"
 	"moviestracker/tapochek"
 	"moviestracker/torrents"
 	"moviestracker/tracker"
@@ -148,7 +149,31 @@ func (p *TrackersPipeline) RunTrackersSearchPipilene() *TrackersPipeline {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	log.Println(p.config.urls)
+	config := tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParsePage}
+	rutorTracker := tracker.Init(config)
+	// kinozalTracker := new(tracker.Tracker)
+	// kinozalTracker.Url = rutor.Kinoz_URLS
+	// kinozalTracker.TrackerParser = rutor.KParsePage
+	torrentsResults, rutorErrors := rutorTracker.TorrentsPipelineStream(ctx)
+	// torrentsResults2, kinozalErrors := kinozalTracker.BuildTorrentListStream(ctx)
+	// allTorrents := pipeline.Merge(ctx, torrentsResults)
+	// allErrors := pipeline.Merge(ctx, rutorErrors)	
+	ts, err := torrents.MergeTorrentChannlesToSlice(ctx, cancel, torrentsResults, rutorErrors)
+	if err != nil {
+		p.Errors = append(p.Errors, err)
+	} else {
+		p.Torrents = ts
+	}
+	return p
+}
+
+func (p *TrackersPipeline) RunTapochekPipilene() *TrackersPipeline {
+	if len(p.Errors) > 0 {
+		return p
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	// config := tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParsePage}
 	// rutorTracker := tracker.Init(config)
 	// kinozalTracker := new(tracker.Tracker)
@@ -171,6 +196,7 @@ func (p *TrackersPipeline) RunTrackersSearchPipilene() *TrackersPipeline {
 	}
 	return p
 }
+
 
 func (p *TrackersPipeline)HandleErrors() error{
 	var err error

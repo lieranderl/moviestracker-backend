@@ -28,7 +28,7 @@ func CollectLatestMoviesHandler() (string, error) {
 				  os.Getenv("FIREBASE_PROJECT"), 
 				  os.Getenv("FIREBASECONFIG"))
 	err := pipeline.
-			 RunTrackersSearchPipilene().
+			 RunTapochekPipilene().
 			 ConvertTorrentsToMovieShort().
 			 TmdbAndFirestore().
 			 DeleteOldMoviesFromDb().
@@ -78,15 +78,6 @@ func main() {
     if err != nil {
         log.Fatal("Error loading .env file")
     }
-
-	// m, err := tapochek.ParsePage("https://tapochek.net/viewforum.php?f=431&start=0")
-	// if err != nil {
-    //     log.Fatal(err)
-    // }
-
-	// for _, i:=range m {
-	// 	log.Println(i)
-	// }
 	
 	CollectLatestMoviesHandler()
 

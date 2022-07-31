@@ -39,7 +39,19 @@ func (tmdbapi *TMDb)FetchMovieDetails(m *Short) (*Short, error) {
 	}
 	if len(r.Results) > 0 {
 		if (m.Searchname == r.Results[0].OriginalTitle || m.Searchname == r.Results[0].Title) && m.Year == r.Results[0].ReleaseDate[:4] {
-			m.MovieShort = r.Results[0]
+			m.Adult =  r.Results[0].Adult     
+			m.BackdropPath =  r.Results[0].BackdropPath     
+			m.ID  =  r.Results[0].ID     
+			m.OriginalTitle =  r.Results[0].OriginalTitle     
+			m.GenreIDs  =  r.Results[0].GenreIDs     
+			m.Popularity  =  r.Results[0].Popularity     
+			m.PosterPath   =  r.Results[0].PosterPath     
+			m.ReleaseDate   =  r.Results[0].ReleaseDate     
+			m.Title       =  r.Results[0].Title     
+			m.Overview     =  r.Results[0].Overview     
+			m.Video      =  r.Results[0].Video     
+			m.VoteAverage  =  r.Results[0].VoteAverage     
+			m.VoteCount   =  r.Results[0].VoteCount     
 		}
 	}
 	// m.ID = int(rand.Int63())
