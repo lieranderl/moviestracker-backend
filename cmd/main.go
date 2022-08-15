@@ -13,6 +13,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	
 	// "github.com/joho/godotenv"
 	// "github.com/aws/aws-lambda-go/lambda"
 	// "github.com/joho/godotenv"
@@ -49,26 +50,30 @@ func CollectLatestMoviesHandler() (string, error) {
 // }
 
 func TorrentsForMovieHandler(apiRequest events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	log.Println("Start Test_func!")
+	log.Println("Start TorrentsForMovieHandler!")
 	start := time.Now()
 
-
-	pipeline := executor.Init(
-				[]string{fmt.Sprintf(os.Getenv("RUTOR_SEARCH_URL"), apiRequest.QueryStringParameters["MovieName"], apiRequest.QueryStringParameters["Year"])}, 
-				"", 
-				"", 
-				"")
-	err := pipeline.RunTrackersSearchPipilene().HandleErrors()
-	if err != nil {
-		return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 500}, nil
+	if apiRequest.QueryStringParameters["MovieName"] != "" {
+		pipeline := executor.Init(
+			[]string{fmt.Sprintf(os.Getenv("RUTOR_SEARCH_URL"), apiRequest.QueryStringParameters["MovieName"], apiRequest.QueryStringParameters["Year"])}, 
+			"", 
+			"", 
+			"")
+		err := pipeline.RunTrackersSearchPipilene().HandleErrors()
+		if err != nil {
+			return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 500}, nil
+		}
+		elapsed := time.Since(start)
+		log.Printf("ALL took %s", elapsed)
+		b, err :=json.Marshal(pipeline.Torrents)
+		if err != nil {
+			return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 500}, nil
+		}
+		return events.APIGatewayProxyResponse{Body: string(b), StatusCode: 200}, nil
+				
 	}
-	elapsed := time.Since(start)
-	log.Printf("ALL took %s", elapsed)
-	b, err :=json.Marshal(pipeline.Torrents)
-	if err != nil {
-		return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 500}, nil
-	}
-	return events.APIGatewayProxyResponse{Body: string(b), StatusCode: 200}, nil
+	return events.APIGatewayProxyResponse{Body: "Empty request", StatusCode: 500}, nil
+	
 }
 
 // func ImdbRatingForId(apiRequest events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
@@ -98,9 +103,9 @@ func main() {
     //     log.Fatal("Error loading .env file")
     // }
 	
-	// CollectLatestMoviesHandler()
+	// // CollectLatestMoviesHandler()
 
-	////MANUAL TorrentsForMovieHandler
+	// //MANUAL TorrentsForMovieHandler
 	// search := events.APIGatewayProxyRequest{QueryStringParameters: map[string]string{"MovieName":"Время","Year":"2021"}}
 	// res, err := TorrentsForMovieHandler(search)
 	// if err != nil {
@@ -108,7 +113,7 @@ func main() {
 	// 	fmt.Println(err)
 	// }
 	// fmt.Printf(res.Body)
-	///////
+	// /////
 	
 
 	
@@ -116,8 +121,8 @@ func main() {
 	////////////////////////	
 	/////////for AWS lambda
 
-	lambda.Start(CollectLatestMoviesHandler)
-	//lambda.Start(TorrentsForMovieHandler)
+	// lambda.Start(CollectLatestMoviesHandler)
+	lambda.Start(TorrentsForMovieHandler)
 
 
 }
