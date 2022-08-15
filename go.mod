@@ -26,7 +26,6 @@ require (
 	github.com/google/go-cmp v0.5.8 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.1.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.4.0 // indirect
-	github.com/joho/godotenv v1.4.0
 	github.com/kennygrant/sanitize v1.2.4 // indirect
 	github.com/kylelemons/go-gypsy v1.0.0 // indirect
 	github.com/saintfish/chardet v0.0.0-20120816061221-3af4cd4741ca // indirect

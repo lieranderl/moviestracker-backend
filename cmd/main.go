@@ -12,8 +12,8 @@ import (
 	// "moviestracker/torrents"
 
 	"github.com/aws/aws-lambda-go/events"
-	// "github.com/aws/aws-lambda-go/lambda"
-	"github.com/joho/godotenv"
+	"github.com/aws/aws-lambda-go/lambda"
+	// "github.com/joho/godotenv"
 	// "github.com/aws/aws-lambda-go/lambda"
 	// "github.com/joho/godotenv"
 )
@@ -71,16 +71,34 @@ func TorrentsForMovieHandler(apiRequest events.APIGatewayProxyRequest) (events.A
 	return events.APIGatewayProxyResponse{Body: string(b), StatusCode: 200}, nil
 }
 
+// func ImdbRatingForId(apiRequest events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+// 	log.Println("Start ImdbRatingForId!")
+// 	start := time.Now()
+// 	imdb_id := apiRequest.QueryStringParameters["imdb_id"]
+	
+// 	err := pipeline.RunTrackersSearchPipilene().HandleErrors()
+// 	if err != nil {
+// 		return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 500}, nil
+// 	}
+// 	elapsed := time.Since(start)
+// 	log.Printf("ALL took %s", elapsed)
+// 	b, err :=json.Marshal(pipeline.Torrents)
+// 	if err != nil {
+// 		return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 500}, nil
+// 	}
+// 	return events.APIGatewayProxyResponse{Body: string(b), StatusCode: 200}, nil
+// }
+
 
 func main() {
 	/////////Manual run
 
-	err := godotenv.Load()
-    if err != nil {
-        log.Fatal("Error loading .env file")
-    }
+	// err := godotenv.Load()
+    // if err != nil {
+    //     log.Fatal("Error loading .env file")
+    // }
 	
-	CollectLatestMoviesHandler()
+	// CollectLatestMoviesHandler()
 
 	////MANUAL TorrentsForMovieHandler
 	// search := events.APIGatewayProxyRequest{QueryStringParameters: map[string]string{"MovieName":"Время","Year":"2021"}}
@@ -98,7 +116,7 @@ func main() {
 	////////////////////////	
 	/////////for AWS lambda
 
-	// lambda.Start(CollectLatestMoviesHandler)
+	lambda.Start(CollectLatestMoviesHandler)
 	//lambda.Start(TorrentsForMovieHandler)
 
 
