@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"moviestracker/torrents"
+	"moviestracker/internal/torrents"
 )
 
 type rutorTorrent struct {

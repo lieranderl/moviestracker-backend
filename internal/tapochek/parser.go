@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"moviestracker/torrents"
+	"moviestracker/internal/torrents"
 
 	"os"
 	"regexp"

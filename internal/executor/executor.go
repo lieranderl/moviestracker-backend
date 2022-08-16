@@ -7,12 +7,11 @@ import (
 	"strings"
 	"time"
 
-	// "moviestracker/imdbratingupdater"
-	"moviestracker/movies"
-	"moviestracker/rutor"
-	"moviestracker/tapochek"
-	"moviestracker/torrents"
-	"moviestracker/tracker"
+	"moviestracker/internal/movies"
+	"moviestracker/internal/rutor"
+	"moviestracker/internal/tapochek"
+	"moviestracker/internal/torrents"
+	"moviestracker/internal/tracker"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"

@@ -6,7 +6,7 @@ import (
 	// "math/rand"
 
 	"cloud.google.com/go/firestore"
-	"moviestracker/pipeline"
+	"moviestracker/pkg/pipeline"
 	"github.com/lieranderl/go-tmdb"
 )
 

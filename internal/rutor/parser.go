@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"moviestracker/torrents"
+	"moviestracker/internal/torrents"
 	"github.com/gocolly/colly"
 )
 
