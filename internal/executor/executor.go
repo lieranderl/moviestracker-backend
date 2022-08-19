@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"moviestracker/internal/kinozal"
 	"moviestracker/internal/movies"
 	"moviestracker/internal/rutor"
 	"moviestracker/internal/tapochek"
@@ -186,6 +187,57 @@ func (p *TrackersPipeline) RunTapochekPipilene() *TrackersPipeline {
 	config := tracker.Config{Urls: p.config.urls, TrackerParser: tapochek.ParsePage}
 	tapochekTracker := tracker.Init(config)
 	torrentsResults, rutorErrors := tapochekTracker.TorrentsPipelineStream(ctx)
+	
+	ts, err := torrents.MergeTorrentChannlesToSlice(ctx, cancel, torrentsResults, rutorErrors)
+	if err != nil {
+		p.Errors = append(p.Errors, err)
+	} else {
+		p.Torrents = ts
+	}
+	return p
+}
+
+func (p *TrackersPipeline) RunRutorPipiline() *TrackersPipeline {
+	if len(p.Errors) > 0 {
+		return p
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	config := tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParsePage}
+	rutorTracker := tracker.Init(config)
+	torrentsResults, rutorErrors := rutorTracker.TorrentsPipelineStream(ctx)
+	
+	ts, err := torrents.MergeTorrentChannlesToSlice(ctx, cancel, torrentsResults, rutorErrors)
+	if err != nil {
+		p.Errors = append(p.Errors, err)
+	} else {
+		p.Torrents = ts
+	}
+	return p
+}
+
+func (p *TrackersPipeline) RunKinozalPipilene() *TrackersPipeline {
+	if len(p.Errors) > 0 {
+		return p
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// config := tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParsePage}
+	// rutorTracker := tracker.Init(config)
+	// kinozalTracker := new(tracker.Tracker)
+	// kinozalTracker.Url = rutor.Kinoz_URLS
+	// kinozalTracker.TrackerParser = rutor.KParsePage
+	// torrentsResults, rutorErrors := rutorTracker.TorrentsPipelineStream(ctx)
+	// torrentsResults2, kinozalErrors := kinozalTracker.BuildTorrentListStream(ctx)
+	// allTorrents := pipeline.Merge(ctx, torrentsResults)
+	// allErrors := pipeline.Merge(ctx, rutorErrors)
+
+	config := tracker.Config{Urls: p.config.urls, TrackerParser: kinozal.ParsePage}
+	kinozalTracker := tracker.Init(config)
+	torrentsResults, rutorErrors := kinozalTracker.TorrentsPipelineStream(ctx)
 	
 	ts, err := torrents.MergeTorrentChannlesToSlice(ctx, cancel, torrentsResults, rutorErrors)
 	if err != nil {

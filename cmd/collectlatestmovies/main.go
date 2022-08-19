@@ -10,8 +10,7 @@ import (
 	"moviestracker/internal/executor"
 	
 	"github.com/joho/godotenv"
-	"github.com/aws/aws-lambda-go/lambda"
-	// "github.com/joho/godotenv"
+	// "github.com/aws/aws-lambda-go/lambda"
 )
 
 
@@ -20,15 +19,15 @@ func CollectLatestMoviesHandler() (string, error) {
 	fmt.Println("Start Test_func!")
 	start := time.Now()
 	pipeline := executor.Init(
-	strings.Split(os.Getenv("T_URLS"), ","), 
+	strings.Split(os.Getenv("RUTOR_URLS"), ","), 
 				  os.Getenv("TMDBAPIKEY"), 
 				  os.Getenv("FIREBASE_PROJECT"), 
 				  os.Getenv("FIREBASECONFIG"))
 	err := pipeline.
-			 RunTapochekPipilene().
-			 ConvertTorrentsToMovieShort().
-			 TmdbAndFirestore().
-			 DeleteOldMoviesFromDb().
+			RunRutorPipiline().
+			ConvertTorrentsToMovieShort().
+			TmdbAndFirestore().
+			//  DeleteOldMoviesFromDb().
 			 HandleErrors()
 	if err != nil {
 		return "Failed!", err
@@ -38,56 +37,6 @@ func CollectLatestMoviesHandler() (string, error) {
 	return "Done!", nil
 }
 
-
-// type Search struct {
-// 	MovieName string
-// 	Year string
-// }
-
-// func TorrentsForMovieHandler(apiRequest events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-// 	log.Println("Start TorrentsForMovieHandler!")
-// 	start := time.Now()
-
-// 	if apiRequest.QueryStringParameters["MovieName"] != "" {
-// 		pipeline := executor.Init(
-// 			[]string{fmt.Sprintf(os.Getenv("RUTOR_SEARCH_URL"), apiRequest.QueryStringParameters["MovieName"], apiRequest.QueryStringParameters["Year"])}, 
-// 			"", 
-// 			"", 
-// 			"")
-// 		err := pipeline.RunTrackersSearchPipilene().HandleErrors()
-// 		if err != nil {
-// 			return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 500}, nil
-// 		}
-// 		elapsed := time.Since(start)
-// 		log.Printf("ALL took %s", elapsed)
-// 		b, err :=json.Marshal(pipeline.Torrents)
-// 		if err != nil {
-// 			return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 500}, nil
-// 		}
-// 		return events.APIGatewayProxyResponse{Body: string(b), StatusCode: 200}, nil
-				
-// 	}
-// 	return events.APIGatewayProxyResponse{Body: "Empty request", StatusCode: 500}, nil
-	
-// }
-
-// func ImdbRatingForId(apiRequest events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-// 	log.Println("Start ImdbRatingForId!")
-// 	start := time.Now()
-// 	imdb_id := apiRequest.QueryStringParameters["imdb_id"]
-	
-// 	err := pipeline.RunTrackersSearchPipilene().HandleErrors()
-// 	if err != nil {
-// 		return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 500}, nil
-// 	}
-// 	elapsed := time.Since(start)
-// 	log.Printf("ALL took %s", elapsed)
-// 	b, err :=json.Marshal(pipeline.Torrents)
-// 	if err != nil {
-// 		return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 500}, nil
-// 	}
-// 	return events.APIGatewayProxyResponse{Body: string(b), StatusCode: 200}, nil
-// }
 
 
 func main() {
@@ -100,5 +49,5 @@ func main() {
 
 	////////////////////////	
 	/////////for AWS lambda
-	lambda.Start(CollectLatestMoviesHandler)
+	// lambda.Start(CollectLatestMoviesHandler)
 }

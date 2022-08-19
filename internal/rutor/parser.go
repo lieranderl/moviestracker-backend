@@ -11,9 +11,7 @@ import (
 
 func ParsePage(url string) ([]*torrents.Torrent, error) {
 	torrents := make([]*torrents.Torrent, 0)
-	c := colly.NewCollector(
-		colly.AllowedDomains("rutor.is"),
-	)
+	c := colly.NewCollector()
 	c.OnHTML("tr", func(e *colly.HTMLElement) {
 		class := e.Attr("class")
 		if class == "gai" || class == "tum" {
