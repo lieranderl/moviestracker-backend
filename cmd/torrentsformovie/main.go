@@ -10,8 +10,8 @@ import (
 	"moviestracker/internal/executor"
 
 	"github.com/aws/aws-lambda-go/events"
-	// "github.com/aws/aws-lambda-go/lambda"
-	"github.com/joho/godotenv"
+	"github.com/aws/aws-lambda-go/lambda"
+	// "github.com/joho/godotenv"
 
 )
 
@@ -49,23 +49,23 @@ func TorrentsForMovieHandler(apiRequest events.APIGatewayProxyRequest) (events.A
 func main() {
 	/////////Manual run
 
-	err := godotenv.Load()
-    if err != nil {
-        log.Fatal("Error loading .env file")
-    }
+	// err := godotenv.Load()
+    // if err != nil {
+    //     log.Fatal("Error loading .env file")
+    // }
 	
-	search := events.APIGatewayProxyRequest{QueryStringParameters: map[string]string{"MovieName":"Время","Year":"2021"}}
-	res, err := TorrentsForMovieHandler(search)
-	if err != nil {
-		fmt.Println("ERROR:")
-		fmt.Println(err)
-	}
-	fmt.Printf(res.Body)
+	// search := events.APIGatewayProxyRequest{QueryStringParameters: map[string]string{"MovieName":"Время","Year":"2021"}}
+	// res, err := TorrentsForMovieHandler(search)
+	// if err != nil {
+	// 	fmt.Println("ERROR:")
+	// 	fmt.Println(err)
+	// }
+	// fmt.Printf(res.Body)
 	/////
 
 	////////////////////////	
 	/////////for AWS lambda
-	// lambda.Start(TorrentsForMovieHandler)
+	lambda.Start(TorrentsForMovieHandler)
 
 
 }

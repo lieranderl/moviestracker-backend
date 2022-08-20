@@ -17,8 +17,8 @@ import (
 )
 
 const (
-    AWS_S3_REGION = "eu-west-3"
-    AWS_S3_BUCKET = "imdb-storage"
+    AWS_S3_REGION = "eu-west-2"
+    AWS_S3_BUCKET = "imdb-store"
  	AWS_KEY_FILE = "title.ratings.tsv"
 )
 
