@@ -27,8 +27,8 @@ func CollectLatestMoviesHandler() (string, error) {
 			RunRutorPipiline().
 			ConvertTorrentsToMovieShort().
 			TmdbAndFirestore().
-			//  DeleteOldMoviesFromDb().
-			 HandleErrors()
+			DeleteOldMoviesFromDb().
+			HandleErrors()
 	if err != nil {
 		return "Failed!", err
 	}

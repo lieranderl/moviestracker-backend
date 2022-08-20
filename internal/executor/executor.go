@@ -50,7 +50,7 @@ func(p *TrackersPipeline) DeleteOldMoviesFromDb() *TrackersPipeline {
 	if err != nil {
 		p.Errors = append(p.Errors, err)
 	}
-	moviesListRef := firestoreClient.Collection("latesttorrentsmovies").Where("ReleaseDate", "<", time.Now().Add(-time.Hour*24*30*12).Format("2006-01-02"))
+	moviesListRef := firestoreClient.Collection("latesttorrentsmovies").Where("LastTimeFound", "<", time.Now().Add(-time.Hour*24*30*12).Format("2006-01-02T15:04:05.000Z"))
 	iter := moviesListRef.Documents(ctx)
 	batch := firestoreClient.Batch()
 	numDeleted := 0
