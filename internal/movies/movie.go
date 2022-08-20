@@ -32,12 +32,13 @@ type Short struct {
 
 
 func (m *Short) updateMoviesAttribs(){
-	m.setQualityVector()
-	m.setLastimeFound()
+	for _, t := range m.Torrents {
+		m.setQualityVector(t)
+		m.setLastimeFound(t)
+	}
 }
 
-func (m *Short) setQualityVector(){
-	for _, t := range m.Torrents {
+func (m *Short) setQualityVector(t *torrents.Torrent){
 		if t.K4 {
 			m.K4 = true
 		}
@@ -50,22 +51,17 @@ func (m *Short) setQualityVector(){
 		if t.DV {
 			m.DV = true
 		}
-	}
 }
 
-func (m *Short) setLastimeFound(){
-	for _, t := range m.Torrents {
-		
-		if t.Date == "" {
-			t.Date = time.Now().String()
-		}
-		layout := "2006-01-02T15:04:05.000Z"
-		timeformat, _ := time.Parse(layout, t.Date)
+func (m *Short) setLastimeFound(t *torrents.Torrent){
+	if t.Date == "" {
+		t.Date = time.Now().String()
+	}
 
-		if timeformat.After(m.LastTimeFound) {
-			m.LastTimeFound = timeformat
-		}
-		
-		
+	layout := "2006-01-02T15:04:05.000Z"
+	timeformat, _ := time.Parse(layout, t.Date)
+
+	if timeformat.After(m.LastTimeFound) {
+		m.LastTimeFound = timeformat
 	}
 }
