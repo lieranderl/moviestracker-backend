@@ -7,10 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"moviestracker/movies"
-	"moviestracker/rutor"
-	"moviestracker/torrents"
-	"moviestracker/tracker"
+	"moviestracker/internal/kinozal"
+	"moviestracker/internal/movies"
+	"moviestracker/internal/rutor"
+	"moviestracker/internal/tapochek"
+	"moviestracker/internal/torrents"
+	"moviestracker/internal/tracker"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"
@@ -48,7 +50,7 @@ func(p *TrackersPipeline) DeleteOldMoviesFromDb() *TrackersPipeline {
 	if err != nil {
 		p.Errors = append(p.Errors, err)
 	}
-	moviesListRef := firestoreClient.Collection("latesttorrentsmovies").Where("LastTimeFound", "<", time.Now().Add(-time.Hour*24*30*3))
+	moviesListRef := firestoreClient.Collection("latesttorrentsmovies").Where("LastTimeFound", "<", time.Now().Add(-time.Hour*24*30*12).Format("2006-01-02T15:04:05.000Z"))
 	iter := moviesListRef.Documents(ctx)
 	batch := firestoreClient.Batch()
 	numDeleted := 0
@@ -133,18 +135,20 @@ func (p *TrackersPipeline) TmdbAndFirestore() *TrackersPipeline{
 		p.Errors = append(p.Errors, err)
 		return p
 	}
+	// imdbratingupdater.Imdbratingupdater(ctx, firestoreClient)
 	movieChan, errorChan := movies.MoviesPipelineStream(ctx, p.Movies, p.config.tmdbApiKey, 20)
 	movies.ChannelToMoviesToDb(ctx, cancel, movieChan, errorChan, firestoreClient)
 	return p
 }
 
+
 func (p *TrackersPipeline) RunTrackersSearchPipilene() *TrackersPipeline {
 	if len(p.Errors) > 0 {
 		return p
 	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	log.Println(p.config.urls)
 	config := tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParsePage}
 	rutorTracker := tracker.Init(config)
 	// kinozalTracker := new(tracker.Tracker)
@@ -153,7 +157,7 @@ func (p *TrackersPipeline) RunTrackersSearchPipilene() *TrackersPipeline {
 	torrentsResults, rutorErrors := rutorTracker.TorrentsPipelineStream(ctx)
 	// torrentsResults2, kinozalErrors := kinozalTracker.BuildTorrentListStream(ctx)
 	// allTorrents := pipeline.Merge(ctx, torrentsResults)
-	// allErrors := pipeline.Merge(ctx, rutorErrors)
+	// allErrors := pipeline.Merge(ctx, rutorErrors)	
 	ts, err := torrents.MergeTorrentChannlesToSlice(ctx, cancel, torrentsResults, rutorErrors)
 	if err != nil {
 		p.Errors = append(p.Errors, err)
@@ -162,6 +166,88 @@ func (p *TrackersPipeline) RunTrackersSearchPipilene() *TrackersPipeline {
 	}
 	return p
 }
+
+func (p *TrackersPipeline) RunTapochekPipilene() *TrackersPipeline {
+	if len(p.Errors) > 0 {
+		return p
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// config := tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParsePage}
+	// rutorTracker := tracker.Init(config)
+	// kinozalTracker := new(tracker.Tracker)
+	// kinozalTracker.Url = rutor.Kinoz_URLS
+	// kinozalTracker.TrackerParser = rutor.KParsePage
+	// torrentsResults, rutorErrors := rutorTracker.TorrentsPipelineStream(ctx)
+	// torrentsResults2, kinozalErrors := kinozalTracker.BuildTorrentListStream(ctx)
+	// allTorrents := pipeline.Merge(ctx, torrentsResults)
+	// allErrors := pipeline.Merge(ctx, rutorErrors)
+
+	config := tracker.Config{Urls: p.config.urls, TrackerParser: tapochek.ParsePage}
+	tapochekTracker := tracker.Init(config)
+	torrentsResults, rutorErrors := tapochekTracker.TorrentsPipelineStream(ctx)
+	
+	ts, err := torrents.MergeTorrentChannlesToSlice(ctx, cancel, torrentsResults, rutorErrors)
+	if err != nil {
+		p.Errors = append(p.Errors, err)
+	} else {
+		p.Torrents = ts
+	}
+	return p
+}
+
+func (p *TrackersPipeline) RunRutorPipiline() *TrackersPipeline {
+	if len(p.Errors) > 0 {
+		return p
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	config := tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParsePage}
+	rutorTracker := tracker.Init(config)
+	torrentsResults, rutorErrors := rutorTracker.TorrentsPipelineStream(ctx)
+	
+	ts, err := torrents.MergeTorrentChannlesToSlice(ctx, cancel, torrentsResults, rutorErrors)
+	if err != nil {
+		p.Errors = append(p.Errors, err)
+	} else {
+		p.Torrents = ts
+	}
+	return p
+}
+
+func (p *TrackersPipeline) RunKinozalPipilene() *TrackersPipeline {
+	if len(p.Errors) > 0 {
+		return p
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// config := tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParsePage}
+	// rutorTracker := tracker.Init(config)
+	// kinozalTracker := new(tracker.Tracker)
+	// kinozalTracker.Url = rutor.Kinoz_URLS
+	// kinozalTracker.TrackerParser = rutor.KParsePage
+	// torrentsResults, rutorErrors := rutorTracker.TorrentsPipelineStream(ctx)
+	// torrentsResults2, kinozalErrors := kinozalTracker.BuildTorrentListStream(ctx)
+	// allTorrents := pipeline.Merge(ctx, torrentsResults)
+	// allErrors := pipeline.Merge(ctx, rutorErrors)
+
+	config := tracker.Config{Urls: p.config.urls, TrackerParser: kinozal.ParsePage}
+	kinozalTracker := tracker.Init(config)
+	torrentsResults, rutorErrors := kinozalTracker.TorrentsPipelineStream(ctx)
+	
+	ts, err := torrents.MergeTorrentChannlesToSlice(ctx, cancel, torrentsResults, rutorErrors)
+	if err != nil {
+		p.Errors = append(p.Errors, err)
+	} else {
+		p.Torrents = ts
+	}
+	return p
+}
+
 
 func (p *TrackersPipeline)HandleErrors() error{
 	var err error

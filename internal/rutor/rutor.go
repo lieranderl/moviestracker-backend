@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"moviestracker/torrents"
+	"moviestracker/internal/torrents"
 )
 
 type rutorTorrent struct {
@@ -44,7 +44,7 @@ func (t *rutorTorrent) parseNameAttributes() {
 }
 
 func (t *rutorTorrent) parseAttributes(after string) {
-	if strings.Contains(strings.ToLower(after), " 4k ") {
+	if strings.Contains(strings.ToLower(after), " 2160p ") {
 		t.K4 = true
 	}
 	if strings.Contains(strings.ToLower(after), " dolby ") {

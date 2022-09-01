@@ -3,8 +3,8 @@ package tracker
 import (
 	"context"
 
-	"moviestracker/pipeline"
-	"moviestracker/torrents"
+	"moviestracker/pkg/pipeline"
+	"moviestracker/internal/torrents"
 )
 
 type Config struct {
@@ -29,6 +29,6 @@ func (t Tracker)TorrentsPipelineStream(ctx context.Context) (chan []*torrents.To
 		ec := make(chan error)
 		return tc, ec
 	}
-	torrents_chan, errors := pipeline.Step(ctx, urlStream, t.trackerParser, 10)
+	torrents_chan, errors := pipeline.Step(ctx, urlStream, t.trackerParser, 3)
 	return torrents_chan, errors
 }
