@@ -13,6 +13,7 @@ import (
 	"moviestracker/internal/tapochek"
 	"moviestracker/internal/torrents"
 	"moviestracker/internal/tracker"
+	"moviestracker/pkg/pipeline"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"
@@ -146,23 +147,34 @@ func (p *TrackersPipeline) RunTrackersSearchPipilene(isMovie string) *TrackersPi
 	if len(p.Errors) > 0 {
 		return p
 	}
-    var config tracker.Config
+
+    var config, configKZ tracker.Config
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if isMovie == "true" {
-		config = tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParseMoviePage}
+		config = tracker.Config{Urls: []string{p.config.urls[0]}, TrackerParser: rutor.ParseMoviePage}
+		configKZ = tracker.Config{Urls:[]string{p.config.urls[1]}, TrackerParser: kinozal.ParseMoviePage}
 	} else {
-		config = tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParseSeriesPage}
+		config = tracker.Config{Urls: []string{p.config.urls[0]}, TrackerParser: rutor.ParseSeriesPage}
+		configKZ = tracker.Config{Urls:[]string{p.config.urls[1]}, TrackerParser: kinozal.ParseSeriesPage}
 	}
 	rutorTracker := tracker.Init(config)
-	// kinozalTracker := new(tracker.Tracker)
-	// kinozalTracker.Url = rutor.Kinoz_URLS
-	// kinozalTracker.TrackerParser = rutor.KParsePage
-	torrentsResults, rutorErrors := rutorTracker.TorrentsPipelineStream(ctx)
-	// torrentsResults2, kinozalErrors := kinozalTracker.BuildTorrentListStream(ctx)
-	// allTorrents := pipeline.Merge(ctx, torrentsResults)
-	// allErrors := pipeline.Merge(ctx, rutorErrors)	
-	ts, err := torrents.MergeTorrentChannlesToSlice(ctx, cancel, torrentsResults, rutorErrors)
+	kzTracker := tracker.Init(configKZ)
+
+	torrentsResults1, rutorErrors1 := rutorTracker.TorrentsPipelineStream(ctx)
+	torrentsResults2, rutorErrors2 := kzTracker.TorrentsPipelineStream(ctx)
+
+	allTorrents := pipeline.Merge(ctx, torrentsResults1, torrentsResults2)
+	allErrors := pipeline.Merge(ctx, rutorErrors1, rutorErrors2)
+	
+	log.Println("ALL: ", allTorrents)
+
+	ts, err := torrents.MergeTorrentChannlesToSlice(ctx, cancel, allTorrents, allErrors)
+	log.Println("TS length before: ", len(ts))
+	ts = torrents.RemoveDuplicatesInPlace(ts)
+	log.Println("TS length AFTER: ", len(ts))
+
+	log.Println("ALL TORRS: ", ts)
 	if err != nil {
 		p.Errors = append(p.Errors, err)
 	} else {
@@ -239,7 +251,7 @@ func (p *TrackersPipeline) RunKinozalPipilene() *TrackersPipeline {
 	// allTorrents := pipeline.Merge(ctx, torrentsResults)
 	// allErrors := pipeline.Merge(ctx, rutorErrors)
 
-	config := tracker.Config{Urls: p.config.urls, TrackerParser: kinozal.ParsePage}
+	config := tracker.Config{Urls: p.config.urls, TrackerParser: kinozal.ParseMoviePage}
 	kinozalTracker := tracker.Init(config)
 	torrentsResults, rutorErrors := kinozalTracker.TorrentsPipelineStream(ctx)
 	

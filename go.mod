@@ -10,6 +10,7 @@ require (
 	github.com/gocolly/colly v1.2.0
 	github.com/goodsign/monday v1.0.0
 	github.com/lieranderl/go-tmdb v1.1.0
+	github.com/stretchr/testify v1.7.2
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
 	google.golang.org/api v0.88.0
 )
@@ -24,6 +25,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.12 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.13.12 // indirect
 	github.com/aws/smithy-go v1.12.1 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 require (

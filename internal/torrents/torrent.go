@@ -3,11 +3,13 @@ package torrents
 import (
 	"context"
 	"log"
+	"sort"
+	"strings"
 )
 
 type Torrent struct {
-	Name		 string
-	DetailsUrl 	 string
+	Name         string
+	DetailsUrl   string
 	OriginalName string
 	RussianName  string
 	Year         string
@@ -21,12 +23,11 @@ type Torrent struct {
 	Seeds        int32
 	Leeches      int32
 	Hash         string
+	MagnetHash   string
 }
 
-
-
 func MergeTorrentChannlesToSlice(ctx context.Context, cancelFunc context.CancelFunc, values <-chan []*Torrent, errors <-chan error) ([]*Torrent, error) {
-	torrents:= make([]*Torrent,0)
+	torrents := make([]*Torrent, 0)
 	for {
 		select {
 		case <-ctx.Done():
@@ -49,4 +50,27 @@ func MergeTorrentChannlesToSlice(ctx context.Context, cancelFunc context.CancelF
 	}
 }
 
+func RemoveDuplicatesInPlace(torrents []*Torrent) []*Torrent {
+	// if there are 0 or 1 items we return the slice itself.
+	if len(torrents) < 2 {
+		return torrents
+	}
 
+	// make the slice ascending sorted.
+	sort.Slice(torrents, func(i, j int) bool {
+		return strings.ToLower(torrents[i].MagnetHash) < strings.ToLower(torrents[j].MagnetHash)
+	})
+
+	uniqPointer := 0
+
+	for i := 1; i < len(torrents); i++ {
+		// compare a current item with the item under the unique pointer.
+		// if they are not the same, write the item next to the right of the unique pointer.
+		if !strings.EqualFold(strings.ToLower(torrents[uniqPointer].MagnetHash), strings.ToLower(torrents[i].MagnetHash)) {
+			uniqPointer++
+			torrents[uniqPointer] = torrents[i]
+		}
+	}
+
+	return torrents[:uniqPointer+1]
+}
