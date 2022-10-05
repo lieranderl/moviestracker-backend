@@ -1,12 +1,18 @@
 package kinozal
 
 import (
+	"log"
 	"testing"
 
+	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestParser(t *testing.T) {
+	err := godotenv.Load()
+    if err != nil {
+        log.Fatal("Error loading .env file")
+    }
 	name:= "Вышка"
 	year:="2022"
 	test_link := "http://kinozal.tv/browse.php?s="+name+"%281080p%7C2160p%29&g=3&c=0&v=0&d="+year+"&w=0&t=0&f=0"

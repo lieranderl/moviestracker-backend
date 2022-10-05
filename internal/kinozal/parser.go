@@ -12,11 +12,12 @@ import (
 
 	"moviestracker/internal/torrents"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly"
 	"github.com/goodsign/monday"
 )
 
-func ParseMoviePage(url string) ([]*torrents.Torrent, error) {
+func kzLogin() (bool, *http.Client) {
 	cred := new(Cred)
 	cred.Login = os.Getenv("KZ_LOGIN")
 	cred.Password = os.Getenv("KZ_PASSWORD")
@@ -24,7 +25,11 @@ func ParseMoviePage(url string) ([]*torrents.Torrent, error) {
 	tbTransport := &http.Transport{}
 	jar, _ = cookiejar.New(&cookiejar.Options{})
 	httpcl := &http.Client{Jar: jar, Transport: tbTransport}
-	l, httpcl := Login(httpcl, cred)
+	return Login(httpcl, cred)
+}
+
+func ParseMoviePage(url string) ([]*torrents.Torrent, error) {
+	l, httpcl := kzLogin()
 	titles := make([]*torrents.Torrent, 0)
 	c := colly.NewCollector()
 	c.OnHTML("tr.bg", func(e *colly.HTMLElement) {
@@ -33,36 +38,7 @@ func ParseMoviePage(url string) ([]*torrents.Torrent, error) {
 		tds := e.DOM.Children()
 		m.Name = tds.Eq(1).Text()
 		if !strings.Contains(m.Name, "сезон") {
-			m.parseAttributes(m.Name)
-			// m.Size = tds.Eq(3).Text()
-			if s, err := strconv.ParseFloat(strings.Split(tds.Eq(3).Text(), " ГБ")[0], 32); err == nil {
-				m.Size = float32(s)
-			}
-			// m.Seeds = tds.Eq(4).Text()
-			if s, err := strconv.ParseInt(strings.TrimSpace(tds.Eq(4).Text()), 10, 32); err == nil {
-				m.Seeds = int32(s)
-			}
-			if s, err := strconv.ParseInt(strings.TrimSpace(tds.Eq(5).Text()), 10, 32); err == nil {
-				m.Leeches = int32(s)
-			}
-
-			layout := "2006-01-02T00:00:00.000Z"
-			layout_parsed := "02.01.2006"
-			timeNow := time.Now()
-			yesterday := time.Now().Add(-24 * time.Hour)
-			if len(strings.Fields(tds.Eq(6).Text())) > 0 {
-				d := strings.Fields(tds.Eq(6).Text())[0]
-				if strings.Contains(d, "сегодня") {
-					m.Date = monday.Format(timeNow, layout, monday.LocaleRuRU)
-				}
-				if strings.Contains(d, "вчера") {
-					m.Date = monday.Format(yesterday, layout, monday.LocaleRuRU)
-				}
-				if len(m.Date) == 0 {
-					parsedMtime, _ := monday.Parse(layout_parsed, d, monday.LocaleRuRU)
-					m.Date = monday.Format(parsedMtime, layout, monday.LocaleRuRU)
-				}
-			}
+			m.parseHtmlTor(tds)
 			titles = append(titles, &m.Torrent)
 		}
 	})
@@ -76,14 +52,7 @@ func ParseMoviePage(url string) ([]*torrents.Torrent, error) {
 }
 
 func ParseSeriesPage(url string) ([]*torrents.Torrent, error) {
-	cred := new(Cred)
-	cred.Login = os.Getenv("KZ_LOGIN")
-	cred.Password = os.Getenv("KZ_PASSWORD")
-	var jar *cookiejar.Jar
-	tbTransport := &http.Transport{}
-	jar, _ = cookiejar.New(&cookiejar.Options{})
-	httpcl := &http.Client{Jar: jar, Transport: tbTransport}
-	l, httpcl := Login(httpcl, cred)
+	l, httpcl := kzLogin()
 	titles := make([]*torrents.Torrent, 0)
 	c := colly.NewCollector()
 	c.OnHTML("tr.bg", func(e *colly.HTMLElement) {
@@ -91,41 +60,10 @@ func ParseSeriesPage(url string) ([]*torrents.Torrent, error) {
 		m.DetailsUrl = strings.TrimSpace(strings.Split(e.ChildAttr("a", "href"), "id=")[1])
 		tds := e.DOM.Children()
 		m.Name = tds.Eq(1).Text()
-
 		if strings.Contains(m.Name, "сезон") {
-			m.parseAttributes(m.Name)
-			// m.Size = tds.Eq(3).Text()
-			if s, err := strconv.ParseFloat(strings.Split(tds.Eq(3).Text(), " ГБ")[0], 32); err == nil {
-				m.Size = float32(s)
-			}
-			// m.Seeds = tds.Eq(4).Text()
-			if s, err := strconv.ParseInt(strings.TrimSpace(tds.Eq(4).Text()), 10, 32); err == nil {
-				m.Seeds = int32(s)
-			}
-			if s, err := strconv.ParseInt(strings.TrimSpace(tds.Eq(5).Text()), 10, 32); err == nil {
-				m.Leeches = int32(s)
-			}
-
-			layout := "2006-01-02T00:00:00.000Z"
-			layout_parsed := "02.01.2006"
-			timeNow := time.Now()
-			yesterday := time.Now().Add(-24 * time.Hour)
-			if len(strings.Fields(tds.Eq(6).Text())) > 0 {
-				d := strings.Fields(tds.Eq(6).Text())[0]
-				if strings.Contains(d, "сегодня") {
-					m.Date = monday.Format(timeNow, layout, monday.LocaleRuRU)
-				}
-				if strings.Contains(d, "вчера") {
-					m.Date = monday.Format(yesterday, layout, monday.LocaleRuRU)
-				}
-				if len(m.Date) == 0 {
-					parsedMtime, _ := monday.Parse(layout_parsed, d, monday.LocaleRuRU)
-					m.Date = monday.Format(parsedMtime, layout, monday.LocaleRuRU)
-				}
-			}
+			m.parseHtmlTor(tds)
 			titles = append(titles, &m.Torrent)
 		}
-
 	})
 	err := c.Visit(url)
 
@@ -134,6 +72,39 @@ func ParseSeriesPage(url string) ([]*torrents.Torrent, error) {
 	}
 
 	return titles, err
+}
+
+func (m *kzTorrent) parseHtmlTor(tds *goquery.Selection) {
+	m.parseAttributes(m.Name)
+	// m.Size = tds.Eq(3).Text()
+	if s, err := strconv.ParseFloat(strings.Split(tds.Eq(3).Text(), " ГБ")[0], 32); err == nil {
+		m.Size = float32(s)
+	}
+	// m.Seeds = tds.Eq(4).Text()
+	if s, err := strconv.ParseInt(strings.TrimSpace(tds.Eq(4).Text()), 10, 32); err == nil {
+		m.Seeds = int32(s)
+	}
+	if s, err := strconv.ParseInt(strings.TrimSpace(tds.Eq(5).Text()), 10, 32); err == nil {
+		m.Leeches = int32(s)
+	}
+
+	layout := "2006-01-02T00:00:00.000Z"
+	layout_parsed := "02.01.2006"
+	timeNow := time.Now()
+	yesterday := time.Now().Add(-24 * time.Hour)
+	if len(strings.Fields(tds.Eq(6).Text())) > 0 {
+		d := strings.Fields(tds.Eq(6).Text())[0]
+		if strings.Contains(d, "сегодня") {
+			m.Date = monday.Format(timeNow, layout, monday.LocaleRuRU)
+		}
+		if strings.Contains(d, "вчера") {
+			m.Date = monday.Format(yesterday, layout, monday.LocaleRuRU)
+		}
+		if len(m.Date) == 0 {
+			parsedMtime, _ := monday.Parse(layout_parsed, d, monday.LocaleRuRU)
+			m.Date = monday.Format(parsedMtime, layout, monday.LocaleRuRU)
+		}
+	}
 }
 
 func fetchMagnetLinks(titles []*torrents.Torrent, httpcl *http.Client) []*torrents.Torrent {
