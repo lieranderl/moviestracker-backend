@@ -8,7 +8,6 @@ import (
 	"golang.org/x/sync/semaphore"
 )
 
-
 func Step[In any, Out any](
 	ctx context.Context,
 	inputChannel <-chan In,
