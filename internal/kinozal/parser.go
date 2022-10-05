@@ -1,7 +1,6 @@
 package kinozal
 
 import (
-	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"os"
@@ -15,14 +14,9 @@ import (
 
 	"github.com/gocolly/colly"
 	"github.com/goodsign/monday"
-	"github.com/joho/godotenv"
 )
 
 func ParseMoviePage(url string) ([]*torrents.Torrent, error) {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
 	cred := new(Cred)
 	cred.Login = os.Getenv("KZ_LOGIN")
 	cred.Password = os.Getenv("KZ_PASSWORD")
@@ -72,7 +66,7 @@ func ParseMoviePage(url string) ([]*torrents.Torrent, error) {
 			titles = append(titles, &m.Torrent)
 		}
 	})
-	err = c.Visit(url)
+	err := c.Visit(url)
 
 	if l {
 		titles = fetchMagnetLinks(titles, httpcl)
@@ -82,10 +76,6 @@ func ParseMoviePage(url string) ([]*torrents.Torrent, error) {
 }
 
 func ParseSeriesPage(url string) ([]*torrents.Torrent, error) {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
 	cred := new(Cred)
 	cred.Login = os.Getenv("KZ_LOGIN")
 	cred.Password = os.Getenv("KZ_PASSWORD")
@@ -137,7 +127,7 @@ func ParseSeriesPage(url string) ([]*torrents.Torrent, error) {
 		}
 
 	})
-	err = c.Visit(url)
+	err := c.Visit(url)
 
 	if l {
 		titles = fetchMagnetLinks(titles, httpcl)

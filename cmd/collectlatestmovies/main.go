@@ -9,8 +9,8 @@ import (
 
 	"moviestracker/internal/executor"
 	
-	"github.com/joho/godotenv"
-	// "github.com/aws/aws-lambda-go/lambda"
+	// "github.com/joho/godotenv"
+	"github.com/aws/aws-lambda-go/lambda"
 )
 
 
@@ -41,13 +41,13 @@ func CollectLatestMoviesHandler() (string, error) {
 
 func main() {
 	/////////Manual run
-	err := godotenv.Load()
-    if err != nil {
-        log.Fatal("Error loading .env file")
-    }
-	CollectLatestMoviesHandler()
+	// err := godotenv.Load()
+    // if err != nil {
+    //     log.Fatal("Error loading .env file")
+    // }
+	// CollectLatestMoviesHandler()
 
 	////////////////////////	
 	/////////for AWS lambda
-	// lambda.Start(CollectLatestMoviesHandler)
+	lambda.Start(CollectLatestMoviesHandler)
 }
