@@ -12,7 +12,6 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	// "github.com/joho/godotenv"
-
 )
 
 
@@ -20,13 +19,13 @@ func TorrentsForMovieHandler(apiRequest events.APIGatewayProxyRequest) (events.A
 	log.Println("Start TorrentsForMovieHandler!")
 	start := time.Now()
 
-	if apiRequest.QueryStringParameters["MovieName"] != "" {
+	if (apiRequest.QueryStringParameters["MovieName"] != "" || apiRequest.QueryStringParameters["Year"] != "" || apiRequest.QueryStringParameters["isMovie"]!="")  {
 		pipeline := executor.Init(
 			[]string{fmt.Sprintf(os.Getenv("RUTOR_SEARCH_URL"), apiRequest.QueryStringParameters["MovieName"], apiRequest.QueryStringParameters["Year"])}, 
 			"", 
 			"", 
 			"")
-		err := pipeline.RunTrackersSearchPipilene().HandleErrors()
+		err := pipeline.RunTrackersSearchPipilene(apiRequest.QueryStringParameters["isMovie"]).HandleErrors()
 		if err != nil {
 			return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 500}, nil
 		}
@@ -54,14 +53,14 @@ func main() {
     //     log.Fatal("Error loading .env file")
     // }
 	
-	// search := events.APIGatewayProxyRequest{QueryStringParameters: map[string]string{"MovieName":"Время","Year":"2021"}}
+	// search := events.APIGatewayProxyRequest{QueryStringParameters: map[string]string{"MovieName":"Время","Year":"2021","isMovie":"true"}}
 	// res, err := TorrentsForMovieHandler(search)
 	// if err != nil {
 	// 	fmt.Println("ERROR:")
 	// 	fmt.Println(err)
 	// }
 	// fmt.Printf(res.Body)
-	/////
+	///
 
 	////////////////////////	
 	/////////for AWS lambda

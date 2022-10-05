@@ -142,14 +142,18 @@ func (p *TrackersPipeline) TmdbAndFirestore() *TrackersPipeline{
 }
 
 
-func (p *TrackersPipeline) RunTrackersSearchPipilene() *TrackersPipeline {
+func (p *TrackersPipeline) RunTrackersSearchPipilene(isMovie string) *TrackersPipeline {
 	if len(p.Errors) > 0 {
 		return p
 	}
-
+    var config tracker.Config
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	config := tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParsePage}
+	if isMovie == "true" {
+		config = tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParseMoviePage}
+	} else {
+		config = tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParseSeriesPage}
+	}
 	rutorTracker := tracker.Init(config)
 	// kinozalTracker := new(tracker.Tracker)
 	// kinozalTracker.Url = rutor.Kinoz_URLS
@@ -205,7 +209,7 @@ func (p *TrackersPipeline) RunRutorPipiline() *TrackersPipeline {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	config := tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParsePage}
+	config := tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParseMoviePage}
 	rutorTracker := tracker.Init(config)
 	torrentsResults, rutorErrors := rutorTracker.TorrentsPipelineStream(ctx)
 	
