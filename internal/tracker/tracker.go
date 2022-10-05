@@ -3,17 +3,17 @@ package tracker
 import (
 	"context"
 
-	"moviestracker/pkg/pipeline"
 	"moviestracker/internal/torrents"
+	"moviestracker/pkg/pipeline"
 )
 
 type Config struct {
-	Urls []string
+	Urls          []string
 	TrackerParser func(string) ([]*torrents.Torrent, error)
 }
 
 type Tracker struct {
-	urls []string
+	urls          []string
 	trackerParser func(string) ([]*torrents.Torrent, error)
 }
 
@@ -21,11 +21,10 @@ func Init(config Config) *Tracker {
 	return &Tracker{urls: config.Urls, trackerParser: config.TrackerParser}
 }
 
-
-func (t Tracker)TorrentsPipelineStream(ctx context.Context) (chan []*torrents.Torrent, chan error){
+func (t Tracker) TorrentsPipelineStream(ctx context.Context) (chan []*torrents.Torrent, chan error) {
 	urlStream, err := pipeline.Producer(ctx, t.urls)
 	if err != nil {
-		tc := make(chan []*torrents.Torrent,)
+		tc := make(chan []*torrents.Torrent)
 		ec := make(chan error)
 		return tc, ec
 	}

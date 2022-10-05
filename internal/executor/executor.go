@@ -30,7 +30,7 @@ type TrackersPipeline struct {
 	Torrents []*torrents.Torrent
 	Movies   []*movies.Short
 	config   Config
-	Errors	 []error
+	Errors   []error
 }
 
 func Init(urls []string, tmdbapikey string, firebaseProject string, firebaseconfig string) *TrackersPipeline {
@@ -40,7 +40,7 @@ func Init(urls []string, tmdbapikey string, firebaseProject string, firebaseconf
 	return tp
 }
 
-func(p *TrackersPipeline) DeleteOldMoviesFromDb() *TrackersPipeline {
+func (p *TrackersPipeline) DeleteOldMoviesFromDb() *TrackersPipeline {
 	if len(p.Errors) > 0 {
 		return p
 	}
@@ -55,23 +55,23 @@ func(p *TrackersPipeline) DeleteOldMoviesFromDb() *TrackersPipeline {
 	batch := firestoreClient.Batch()
 	numDeleted := 0
 	for {
-			doc, err := iter.Next()
-			if err == iterator.Done {
-					break
-			}
-			if err != nil {
-				p.Errors = append(p.Errors, err)
-				return p
-			}
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			p.Errors = append(p.Errors, err)
+			return p
+		}
 
-			batch.Delete(doc.Ref)
-			numDeleted++
+		batch.Delete(doc.Ref)
+		numDeleted++
 	}
 
 	// If there are no documents to delete,
 	// the process is over.
 	if numDeleted == 0 {
-			return p
+		return p
 	}
 
 	_, err = batch.Commit(ctx)
@@ -124,7 +124,7 @@ func (p *TrackersPipeline) ConvertTorrentsToMovieShort() *TrackersPipeline {
 
 }
 
-func (p *TrackersPipeline) TmdbAndFirestore() *TrackersPipeline{
+func (p *TrackersPipeline) TmdbAndFirestore() *TrackersPipeline {
 	if len(p.Errors) > 0 {
 		return p
 	}
@@ -141,21 +141,20 @@ func (p *TrackersPipeline) TmdbAndFirestore() *TrackersPipeline{
 	return p
 }
 
-
 func (p *TrackersPipeline) RunTrackersSearchPipilene(isMovie string) *TrackersPipeline {
 	if len(p.Errors) > 0 {
 		return p
 	}
 
-    var config, configKZ tracker.Config
+	var config, configKZ tracker.Config
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if isMovie == "true" {
 		config = tracker.Config{Urls: []string{p.config.urls[0]}, TrackerParser: rutor.ParseMoviePage}
-		configKZ = tracker.Config{Urls:[]string{p.config.urls[1]}, TrackerParser: kinozal.ParseMoviePage}
+		configKZ = tracker.Config{Urls: []string{p.config.urls[1]}, TrackerParser: kinozal.ParseMoviePage}
 	} else {
 		config = tracker.Config{Urls: []string{p.config.urls[0]}, TrackerParser: rutor.ParseSeriesPage}
-		configKZ = tracker.Config{Urls:[]string{p.config.urls[1]}, TrackerParser: kinozal.ParseSeriesPage}
+		configKZ = tracker.Config{Urls: []string{p.config.urls[1]}, TrackerParser: kinozal.ParseSeriesPage}
 	}
 	rutorTracker := tracker.Init(config)
 	kzTracker := tracker.Init(configKZ)
@@ -165,7 +164,7 @@ func (p *TrackersPipeline) RunTrackersSearchPipilene(isMovie string) *TrackersPi
 
 	allTorrents := pipeline.Merge(ctx, torrentsResults1, torrentsResults2)
 	allErrors := pipeline.Merge(ctx, rutorErrors1, rutorErrors2)
-	
+
 	log.Println("ALL: ", allTorrents)
 
 	ts, err := torrents.MergeTorrentChannlesToSlice(ctx, cancel, allTorrents, allErrors)
@@ -182,7 +181,6 @@ func (p *TrackersPipeline) RunTrackersSearchPipilene(isMovie string) *TrackersPi
 	return p
 }
 
-
 func (p *TrackersPipeline) RunRutorPipiline() *TrackersPipeline {
 	if len(p.Errors) > 0 {
 		return p
@@ -194,7 +192,7 @@ func (p *TrackersPipeline) RunRutorPipiline() *TrackersPipeline {
 	config := tracker.Config{Urls: p.config.urls, TrackerParser: rutor.ParseMoviePage}
 	rutorTracker := tracker.Init(config)
 	torrentsResults, rutorErrors := rutorTracker.TorrentsPipelineStream(ctx)
-	
+
 	ts, err := torrents.MergeTorrentChannlesToSlice(ctx, cancel, torrentsResults, rutorErrors)
 	if err != nil {
 		p.Errors = append(p.Errors, err)
@@ -204,11 +202,10 @@ func (p *TrackersPipeline) RunRutorPipiline() *TrackersPipeline {
 	return p
 }
 
-
-func (p *TrackersPipeline)HandleErrors() error{
+func (p *TrackersPipeline) HandleErrors() error {
 	var err error
 	if len(p.Errors) > 0 {
-		errorStrSlice := make([]string,0)
+		errorStrSlice := make([]string, 0)
 		for _, err := range p.Errors {
 			errorStrSlice = append(errorStrSlice, err.Error())
 		}

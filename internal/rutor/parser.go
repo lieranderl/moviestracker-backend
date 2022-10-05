@@ -6,8 +6,6 @@ import (
 	"regexp"
 	"strings"
 
-	// "strings"
-
 	"moviestracker/internal/torrents"
 
 	"github.com/gocolly/colly"
@@ -68,4 +66,3 @@ func ParseSeriesPage(url string) ([]*torrents.Torrent, error) {
 
 	return torrents, err
 }
-

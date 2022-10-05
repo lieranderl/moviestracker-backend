@@ -22,7 +22,7 @@ func main() {
 	// log.Printf("Took %s", elapsed)
 
 	// 	////////////////////////
-		/////////for AWS lambda
+	/////////for AWS lambda
 	start := time.Now()
 	lambda.Start(imdbrating.DownloadImdbData)
 	elapsed := time.Since(start)

@@ -9,17 +9,13 @@ import (
 	// "github.com/joho/godotenv"
 )
 
-
-
-
-
 func main() {
 	/////////Manual run
 
 	// err := godotenv.Load()
-    // if err != nil {
-    //     log.Fatal("Error loading .env file")
-    // }
+	// if err != nil {
+	//     log.Fatal("Error loading .env file")
+	// }
 	// search := events.APIGatewayProxyRequest{QueryStringParameters: map[string]string{"imdb_id":"tt1877830"}}
 	// res, err := imdbrating.GetImdbRating(search)
 	// if err != nil {
@@ -28,12 +24,10 @@ func main() {
 	// }
 	// log.Printf(res.Body)
 	///
-	
 
-	////////////////////////	
+	////////////////////////
 	/////////for AWS lambda
 
 	lambda.Start(imdbrating.GetImdbRating)
-
 
 }

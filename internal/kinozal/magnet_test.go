@@ -13,19 +13,18 @@ import (
 
 func TestPagnet(t *testing.T) {
 	err := godotenv.Load()
-    if err != nil {
-        log.Fatal("Error loading .env file")
-    }
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
 	cred := new(Cred)
 	cred.Login = os.Getenv("KZ_LOGIN")
 	cred.Password = os.Getenv("KZ_PASSWORD")
 
 	var jar *cookiejar.Jar
-	tbTransport := &http.Transport{
-	}
+	tbTransport := &http.Transport{}
 	jar, _ = cookiejar.New(&cookiejar.Options{})
 	httpcl := &http.Client{Jar: jar, Transport: tbTransport}
-	
+
 	l, httpcl := Login(httpcl, cred)
 	if l {
 		ch := make(chan map[string]string)
@@ -36,6 +35,5 @@ func TestPagnet(t *testing.T) {
 	} else {
 		t.Error()
 	}
-	
 
 }

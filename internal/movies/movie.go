@@ -19,41 +19,40 @@ type Short struct {
 	Video         bool    `json:"video" firestore:"video"`
 	VoteAverage   float32 `json:"vote_average" firestore:"vote_average"`
 	VoteCount     uint32  `json:"vote_count" firestore:"vote_count"`
-	Year 			string
-	Torrents 		[]*torrents.Torrent
-	Hash 			string
-	Searchname 		string
-	K4           	bool
-	FHD         	bool
-	HDR          	bool
-	DV           	bool
-	LastTimeFound 	time.Time
+	Year          string
+	Torrents      []*torrents.Torrent
+	Hash          string
+	Searchname    string
+	K4            bool
+	FHD           bool
+	HDR           bool
+	DV            bool
+	LastTimeFound time.Time
 }
 
-
-func (m *Short) updateMoviesAttribs(){
+func (m *Short) updateMoviesAttribs() {
 	for _, t := range m.Torrents {
 		m.setQualityVector(t)
 		m.setLastimeFound(t)
 	}
 }
 
-func (m *Short) setQualityVector(t *torrents.Torrent){
-		if t.K4 {
-			m.K4 = true
-		}
-		if t.FHD {
-			m.FHD = true
-		}
-		if t.HDR {
-			m.HDR = true
-		}
-		if t.DV {
-			m.DV = true
-		}
+func (m *Short) setQualityVector(t *torrents.Torrent) {
+	if t.K4 {
+		m.K4 = true
+	}
+	if t.FHD {
+		m.FHD = true
+	}
+	if t.HDR {
+		m.HDR = true
+	}
+	if t.DV {
+		m.DV = true
+	}
 }
 
-func (m *Short) setLastimeFound(t *torrents.Torrent){
+func (m *Short) setLastimeFound(t *torrents.Torrent) {
 	if t.Date == "" {
 		t.Date = time.Now().String()
 	}

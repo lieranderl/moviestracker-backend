@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	URLBASE = "https://datasets.imdbws.com/"
- 	RATINGSFILEARC = "title.ratings.tsv.gz"
+	URLBASE        = "https://datasets.imdbws.com/"
+	RATINGSFILEARC = "title.ratings.tsv.gz"
 )
 
 func getImdbFile() *http.Response {
@@ -42,7 +42,7 @@ func getImdbFile() *http.Response {
 	if err != nil {
 		log.Println(err)
 	}
-	
+
 	if resp.StatusCode == 200 {
 		elapsed := time.Since(start)
 		log.Printf("%0.3f MB downloaded completed in %s", sizeMb, elapsed)
@@ -55,7 +55,7 @@ func getImdbFile() *http.Response {
 	return nil
 }
 
-func DownloadImdbData() {   
+func DownloadImdbData() {
 
 	resp := getImdbFile()
 	if resp == nil {
@@ -74,19 +74,19 @@ func DownloadImdbData() {
 		log.Fatalln(err)
 	}
 
-	accessKey:=os.Getenv("AWSAccessKeyId")
-	secretKey:=os.Getenv("AWSSecretKey")
+	accessKey := os.Getenv("AWSAccessKeyId")
+	secretKey := os.Getenv("AWSSecretKey")
 	client := s3.New(s3.Options{
 		Region:      AWS_S3_REGION,
 		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
 	})
 
 	_, err = client.PutObject(context.Background(), &s3.PutObjectInput{
-        Bucket: aws.String(AWS_S3_BUCKET),
-        Key:    aws.String("title.ratings.tsv"),
+		Bucket: aws.String(AWS_S3_BUCKET),
+		Key:    aws.String("title.ratings.tsv"),
 		Body:   bytes.NewBuffer(p),
-	    })
-    if err != nil {
-        log.Fatal(err)
-    }
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
 }

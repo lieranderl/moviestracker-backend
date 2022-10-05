@@ -3,7 +3,6 @@ package kinozal
 import (
 	"compress/gzip"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -89,7 +88,7 @@ func get(httpClient *http.Client, url1 string) ([]byte, error) {
 	default:
 		reader = resp.Body
 	}
-	bb, err := ioutil.ReadAll(reader)
+	bb, err := io.ReadAll(reader)
 	if err != nil {
 		log.Println("Read error", err)
 		return nil, err
