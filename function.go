@@ -2,9 +2,9 @@ package googlefunc
 
 import (
 	"encoding/json"
+	"ex.com/moviestracker/internal/executor"
 	"fmt"
 	"log"
-	"ex.com/moviestracker/internal/executor"
 	"net/http"
 	"os"
 	"time"
@@ -13,9 +13,8 @@ import (
 )
 
 func init() {
-   functions.HTTP("TorrentsForMovieHandler", TorrentsForMovieHandler)
+	functions.HTTP("TorrentsForMovieHandler", TorrentsForMovieHandler)
 }
-
 
 func TorrentsForMovieHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("Start TorrentsForMovieHandler!")
@@ -41,19 +40,19 @@ func TorrentsForMovieHandler(w http.ResponseWriter, r *http.Request) {
 		err := pipeline.RunTrackersSearchPipilene(ismovie).HandleErrors()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-    		w.Write([]byte(err.Error()))
+			w.Write([]byte(err.Error()))
 		}
 		elapsed := time.Since(start)
 		log.Printf("ALL took %s", elapsed)
 		b, err := json.Marshal(pipeline.Torrents)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-    		w.Write([]byte(err.Error()))
+			w.Write([]byte(err.Error()))
 		}
-    	w.Write(b)
+		w.Write(b)
 
 	} else {
 		w.WriteHeader(http.StatusInternalServerError)
-    	w.Write([]byte("500 - Empty Request"))
+		w.Write([]byte("500 - Empty Request"))
 	}
 }
