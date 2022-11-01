@@ -7,8 +7,6 @@ import (
 	"github.com/goodsign/monday"
 )
 
-
-
 func isRussianOnly(text string) bool {
 	return !strings.Contains(text, "/")
 }

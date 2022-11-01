@@ -2,7 +2,7 @@ package pipeline
 
 import "context"
 
-func Producer[T any](ctx context.Context, urls []T) (<-chan T, error){
+func Producer[T any](ctx context.Context, urls []T) (<-chan T, error) {
 	outChannel := make(chan T)
 	go func() {
 		defer close(outChannel)
@@ -12,7 +12,3 @@ func Producer[T any](ctx context.Context, urls []T) (<-chan T, error){
 	}()
 	return outChannel, nil
 }
-
-
-
-

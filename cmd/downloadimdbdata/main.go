@@ -2,7 +2,7 @@ package main
 
 import (
 	"log"
-	"moviestracker/internal/imdbrating"
+	"ex.com/moviestracker/internal/imdbrating"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -22,7 +22,7 @@ func main() {
 	// log.Printf("Took %s", elapsed)
 
 	// 	////////////////////////
-		/////////for AWS lambda
+	/////////for AWS lambda
 	start := time.Now()
 	lambda.Start(imdbrating.DownloadImdbData)
 	elapsed := time.Since(start)
