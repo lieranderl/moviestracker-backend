@@ -7,7 +7,7 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"github.com/lieranderl/go-tmdb"
-	"moviestracker/pkg/pipeline"
+	"ex.com/moviestracker/pkg/pipeline"
 )
 
 type TMDb struct {

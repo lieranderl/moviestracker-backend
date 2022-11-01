@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"moviestracker/internal/kinozal"
-	"moviestracker/internal/movies"
-	"moviestracker/internal/rutor"
-	"moviestracker/internal/torrents"
-	"moviestracker/internal/tracker"
-	"moviestracker/pkg/pipeline"
+	"ex.com/moviestracker/internal/kinozal"
+	"ex.com/moviestracker/internal/movies"
+	"ex.com/moviestracker/internal/rutor"
+	"ex.com/moviestracker/internal/torrents"
+	"ex.com/moviestracker/internal/tracker"
+	"ex.com/moviestracker/pkg/pipeline"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"moviestracker/internal/executor"
+	"ex.com/moviestracker/internal/executor"
 
 	// "github.com/joho/godotenv"
 	"github.com/aws/aws-lambda-go/lambda"

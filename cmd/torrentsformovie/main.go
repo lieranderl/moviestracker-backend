@@ -7,13 +7,11 @@ import (
 	"os"
 	"time"
 
-	"moviestracker/internal/executor"
+	"ex.com/moviestracker/internal/executor"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambda"
 	// "github.com/aws/aws-lambda-go/lambda"
-	// "github.com/joho/godotenv"
-	// "github.com/joho/godotenv"
+
 )
 
 func TorrentsForMovieHandler(apiRequest events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
@@ -46,7 +44,7 @@ func TorrentsForMovieHandler(apiRequest events.APIGatewayProxyRequest) (events.A
 
 }
 
-func main() {
+// func main() {
 	/////////Manual run
 
 	// err := godotenv.Load()
@@ -74,6 +72,6 @@ func main() {
 
 	////////////////////////
 	/////////for AWS lambda
-	lambda.Start(TorrentsForMovieHandler)
+	// lambda.Start(TorrentsForMovieHandler)
 
-}
+// }

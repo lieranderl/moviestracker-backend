@@ -1,7 +1,7 @@
 package movies
 
 import (
-	"moviestracker/internal/torrents"
+	"ex.com/moviestracker/internal/torrents"
 	"time"
 )
 

@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"moviestracker/internal/torrents"
+	"ex.com/moviestracker/internal/torrents"
 
 	"github.com/gocolly/colly"
 )

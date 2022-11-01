@@ -3,8 +3,8 @@ package tracker
 import (
 	"context"
 
-	"moviestracker/internal/torrents"
-	"moviestracker/pkg/pipeline"
+	"ex.com/moviestracker/internal/torrents"
+	"ex.com/moviestracker/pkg/pipeline"
 )
 
 type Config struct {

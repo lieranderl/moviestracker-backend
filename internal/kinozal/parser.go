@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"moviestracker/internal/torrents"
+	"ex.com/moviestracker/internal/torrents"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly"

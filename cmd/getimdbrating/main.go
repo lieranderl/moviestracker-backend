@@ -2,7 +2,7 @@ package main
 
 import (
 	// "log"
-	"moviestracker/internal/imdbrating"
+	"ex.com/moviestracker/internal/imdbrating"
 
 	// "github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
