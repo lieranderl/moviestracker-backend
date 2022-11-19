@@ -15,7 +15,7 @@ type Cred struct {
 	Password string
 }
 
-const KINOZALLOGINURL = "http://kinozal.tv/takelogin.php"
+const KINOZALLOGINURL = "https://kinozal.tv/takelogin.php"
 
 func Login(httpClient *http.Client, cred *Cred) (bool, *http.Client) {
 	_, err := httpClient.Get(KINOZALLOGINURL)
