@@ -19,6 +19,8 @@ type Torrent struct {
 	K4           bool
 	FHD          bool
 	HDR          bool
+	HDR10        bool
+	HDR10plus    bool
 	DV           bool
 	Seeds        int32
 	Leeches      int32

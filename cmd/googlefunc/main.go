@@ -20,6 +20,10 @@ func main() {
 	if err := funcframework.RegisterHTTPFunctionContext(ctx, "/gettorrents", googlefunc.TorrentsForMovieHandler); err != nil {
 		log.Fatalf("funcframework.RegisterHTTPFunctionContext: %v\n", err)
 	}
+
+	if err := funcframework.RegisterHTTPFunctionContext(ctx, "/gethdr10", googlefunc.Gethdr10movies); err != nil {
+		log.Fatalf("funcframework.RegisterHTTPFunctionContext: %v\n", err)
+	}
 	// Use PORT environment variable, or default to 8080.
 	port := "8080"
 	if envPort := os.Getenv("PORT"); envPort != "" {

@@ -26,7 +26,8 @@ func TorrentsForMovieHandler(apiRequest events.APIGatewayProxyRequest) (events.A
 			},
 			"",
 			"",
-			"")
+			"",
+			false)
 		err := pipeline.RunTrackersSearchPipilene(apiRequest.QueryStringParameters["isMovie"]).HandleErrors()
 		if err != nil {
 			return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 500}, nil
