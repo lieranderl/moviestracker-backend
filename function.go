@@ -79,7 +79,7 @@ func Gethdr10movies(w http.ResponseWriter, r *http.Request){
 		HandleErrors()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("500 - Empty Request"))
+		w.Write([]byte("500 - Error"))
 	}
 	
 	b, err := json.Marshal(pipeline.Movies)
