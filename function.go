@@ -70,24 +70,29 @@ func Gethdr10movies(w http.ResponseWriter, r *http.Request){
 
 	pipeline := executor.Init(
 		strings.Split(os.Getenv("RUTOR_HDR10_URLS"), ","),
-		"","","",
-		false,
+		os.Getenv("TMDBAPIKEY"),
+		os.Getenv("FIREBASE_PROJECT"),
+		os.Getenv("FIREBASECONFIG"),
+		true,
 	)
 	err := pipeline.
 		RunRutorPipiline().
 		ConvertTorrentsToMovieShort().
+		Tmdb().
+		SaveToDb("hdr10movies").
 		HandleErrors()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("500 - Error"))
 	}
 	
-	b, err := json.Marshal(pipeline.Movies)
+	// b, err := json.Marshal(pipeline.Movies)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
 	}
-	w.Write(b)
+	// w.Write(b)
+	w.Write([]byte("200 - OK"))
 
 	elapsed := time.Since(start)
 	log.Printf("ALL took %s", elapsed)
