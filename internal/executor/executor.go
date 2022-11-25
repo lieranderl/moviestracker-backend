@@ -33,7 +33,7 @@ type TrackersPipeline struct {
 	Errors   []error
 }
 
-func Init(urls []string, tmdbapikey string, firebaseProject string, firebaseconfig string) *TrackersPipeline {
+func Init(urls []string, tmdbapikey string, firebaseProject string, firebaseconfig string, saveToDb bool) *TrackersPipeline {
 	tp := new(TrackersPipeline)
 	goption := option.WithCredentialsJSON([]byte(firebaseconfig))
 	tp.config = Config{urls: urls, tmdbApiKey: tmdbapikey, firebaseProject: firebaseProject, goption: goption}
@@ -115,6 +115,7 @@ func (p *TrackersPipeline) ConvertTorrentsToMovieShort() *TrackersPipeline {
 			movie.Year = movietorr.Year
 			i += 1
 			movie.Torrents = append(movie.Torrents, movietorr)
+			movie.UpdateMoviesAttribs()
 			ms = append(ms, movie)
 		}
 
@@ -124,7 +125,18 @@ func (p *TrackersPipeline) ConvertTorrentsToMovieShort() *TrackersPipeline {
 
 }
 
-func (p *TrackersPipeline) TmdbAndFirestore() *TrackersPipeline {
+func (p *TrackersPipeline) Tmdb() *TrackersPipeline {
+	if len(p.Errors) > 0 {
+		return p
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	movieChan, errorChan := movies.MoviesPipelineStream(ctx, p.Movies, p.config.tmdbApiKey, 20)
+	p.Movies = movies.ChannelToMovies(ctx, cancel, movieChan, errorChan)
+	return p
+}
+
+func (p *TrackersPipeline) SaveToDb(collection string) *TrackersPipeline {
 	if len(p.Errors) > 0 {
 		return p
 	}
@@ -135,9 +147,9 @@ func (p *TrackersPipeline) TmdbAndFirestore() *TrackersPipeline {
 		p.Errors = append(p.Errors, err)
 		return p
 	}
-	// imdbratingupdater.Imdbratingupdater(ctx, firestoreClient)
-	movieChan, errorChan := movies.MoviesPipelineStream(ctx, p.Movies, p.config.tmdbApiKey, 20)
-	movies.ChannelToMoviesToDb(ctx, cancel, movieChan, errorChan, firestoreClient)
+	for _, m := range p.Movies{
+		m.WriteMovieToDb(ctx, firestoreClient, collection)
+	}
 	return p
 }
 

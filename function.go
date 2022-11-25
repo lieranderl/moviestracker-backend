@@ -2,18 +2,21 @@ package googlefunc
 
 import (
 	"encoding/json"
-	"ex.com/moviestracker/internal/executor"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
+
+	"ex.com/moviestracker/internal/executor"
 
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
 )
 
 func init() {
 	functions.HTTP("TorrentsForMovieHandler", TorrentsForMovieHandler)
+	functions.HTTP("Gethdr10movies", Gethdr10movies)
 }
 
 func TorrentsForMovieHandler(w http.ResponseWriter, r *http.Request) {
@@ -36,7 +39,9 @@ func TorrentsForMovieHandler(w http.ResponseWriter, r *http.Request) {
 			},
 			"",
 			"",
-			"")
+			"",
+			false,
+		)
 		err := pipeline.RunTrackersSearchPipilene(ismovie).HandleErrors()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -55,4 +60,40 @@ func TorrentsForMovieHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("500 - Empty Request"))
 	}
+}
+
+func Gethdr10movies(w http.ResponseWriter, r *http.Request){
+	log.Println("Start Gethdr10movies!")
+	start := time.Now()
+
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+
+	pipeline := executor.Init(
+		strings.Split(os.Getenv("RUTOR_HDR10_URLS"), ","),
+		os.Getenv("TMDBAPIKEY"),
+		os.Getenv("FIREBASE_PROJECT"),
+		os.Getenv("FIREBASECONFIG"),
+		true,
+	)
+	err := pipeline.
+		RunRutorPipiline().
+		ConvertTorrentsToMovieShort().
+		Tmdb().
+		SaveToDb("hdr10movies").
+		HandleErrors()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("500 - Error"))
+	}
+	
+	// b, err := json.Marshal(pipeline.Movies)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+	}
+	// w.Write(b)
+	w.Write([]byte("200 - OK"))
+
+	elapsed := time.Since(start)
+	log.Printf("ALL took %s", elapsed)
 }

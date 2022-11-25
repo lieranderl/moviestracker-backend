@@ -20,11 +20,14 @@ func CollectLatestMoviesHandler() (string, error) {
 		strings.Split(os.Getenv("RUTOR_URLS"), ","),
 		os.Getenv("TMDBAPIKEY"),
 		os.Getenv("FIREBASE_PROJECT"),
-		os.Getenv("FIREBASECONFIG"))
+		os.Getenv("FIREBASECONFIG"),
+		true,
+	)
 	err := pipeline.
 		RunRutorPipiline().
 		ConvertTorrentsToMovieShort().
-		TmdbAndFirestore().
+		Tmdb().
+		SaveToDb("latesttorrentsmovies").
 		DeleteOldMoviesFromDb().
 		HandleErrors()
 	if err != nil {

@@ -5,7 +5,6 @@ import (
 	"log"
 	// "math/rand"
 
-	"cloud.google.com/go/firestore"
 	"github.com/lieranderl/go-tmdb"
 	"ex.com/moviestracker/pkg/pipeline"
 )
@@ -25,7 +24,7 @@ func TMDBInit(tmdbkey string) *TMDb {
 	return mytmdb
 }
 
-func (tmdbapi *TMDb) FetchMovieDetails(m *Short) (*Short, error) {
+func (tmdbapi *TMDb) fetchMovieDetails(m *Short) (*Short, error) {
 	var options = make(map[string]string)
 	options["language"] = "ru"
 	options["year"] = m.Year
@@ -37,17 +36,17 @@ func (tmdbapi *TMDb) FetchMovieDetails(m *Short) (*Short, error) {
 	}
 	if len(r.Results) > 0 {
 		if (m.Searchname == r.Results[0].OriginalTitle || m.Searchname == r.Results[0].Title) && m.Year == r.Results[0].ReleaseDate[:4] {
-			m.Adult = r.Results[0].Adult
-			m.BackdropPath = r.Results[0].BackdropPath
+			// m.Adult = r.Results[0].Adult
+			// m.BackdropPath = r.Results[0].BackdropPath
 			m.ID = r.Results[0].ID
 			m.OriginalTitle = r.Results[0].OriginalTitle
-			m.GenreIDs = r.Results[0].GenreIDs
-			m.Popularity = r.Results[0].Popularity
+			// m.GenreIDs = r.Results[0].GenreIDs
+			// m.Popularity = r.Results[0].Popularity
 			m.PosterPath = r.Results[0].PosterPath
 			m.ReleaseDate = r.Results[0].ReleaseDate
 			m.Title = r.Results[0].Title
-			m.Overview = r.Results[0].Overview
-			m.Video = r.Results[0].Video
+			// m.Overview = r.Results[0].Overview
+			// m.Video = r.Results[0].Video
 			m.VoteAverage = r.Results[0].VoteAverage
 			m.VoteCount = r.Results[0].VoteCount
 		}
@@ -65,17 +64,17 @@ func MoviesPipelineStream(ctx context.Context, movies []*Short, tmdbkey string, 
 		return mc, ec
 	}
 	mytmdb := TMDBInit(tmdbkey)
-	movie_chan, errors := pipeline.Step(ctx, m, mytmdb.FetchMovieDetails, limit)
+	movie_chan, errors := pipeline.Step(ctx, m, mytmdb.fetchMovieDetails, limit)
 	return movie_chan, errors
 }
 
-func ChannelToMoviesToDb(ctx context.Context, cancelFunc context.CancelFunc, values <-chan *Short, errors <-chan error, firestoreClient *firestore.Client) int {
-	i := 0
+func ChannelToMovies(ctx context.Context, cancelFunc context.CancelFunc, values <-chan *Short, errors <-chan error) []*Short {
+	movies := make([]*Short,0)
 	for {
 		select {
 		case <-ctx.Done():
 			log.Print(ctx.Err().Error())
-			return i
+			return movies
 		case err := <-errors:
 			if err != nil {
 				log.Println("error: ", err.Error())
@@ -84,14 +83,14 @@ func ChannelToMoviesToDb(ctx context.Context, cancelFunc context.CancelFunc, val
 		case m, ok := <-values:
 			if ok {
 				if len(m.OriginalTitle) > 0 {
-					m.updateMoviesAttribs()
-					m.writeMovieToDb(ctx, firestoreClient)
-					i += 1
+					movies = append(movies, m)
 				}
 			} else {
-				log.Println("Done! Collected", i, "movies")
-				return i
+				log.Println("Done! Collected", len(movies), "movies")
+				return movies
 			}
 		}
 	}
 }
+
+
