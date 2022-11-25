@@ -146,15 +146,14 @@ func (t *kzTorrent) parseAttributes(after string) {
 		t.FHD = true
 	}
 
-	if strings.Contains(strings.ToLower(after), "hdr") || strings.Contains(strings.ToLower(after), "hdr10") || strings.Contains(strings.ToLower(after), "hdr10+") {
-		t.HDR = true
-	}
-
-	if strings.Contains(strings.ToLower(after), "hdr10") || strings.Contains(strings.ToLower(after), "hdr10+")  {
-		t.HDR10 = true
-	}
-
 	if strings.Contains(strings.ToLower(after), "hdr10+") {
 		t.HDR10plus = true
+		t.HDR10 = true
+		t.HDR = true
+	} else if strings.Contains(strings.ToLower(after), "hdr10") {
+		t.HDR10 = true
+		t.HDR = true
+	} else if strings.Contains(strings.ToLower(after), "hdr") {
+		t.HDR = true
 	}
 }
