@@ -6,3 +6,5 @@ firestore.*
 moviestracker-f07e2-firebase-adminsdk-w0cry-b9ecc5d365.json
 .firebaserc
 lasttorrentsmovies-data/
+*.zip
+api-cofig-torr-imdb.yaml

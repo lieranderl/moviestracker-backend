@@ -1,11 +1,11 @@
 package main
 
 import (
-	"log"
-	"ex.com/moviestracker/internal/imdbrating"
-	"time"
+	// "log"
+	// "ex.com/moviestracker/internal/imdbrating"
+	// "time"
 
-	"github.com/aws/aws-lambda-go/lambda"
+	// "github.com/aws/aws-lambda-go/lambda"
 	// "github.com/joho/godotenv"
 )
 
@@ -23,9 +23,9 @@ func main() {
 
 	// 	////////////////////////
 	/////////for AWS lambda
-	start := time.Now()
-	lambda.Start(imdbrating.DownloadImdbData)
-	elapsed := time.Since(start)
-	log.Printf("Took %s", elapsed)
+	// start := time.Now()
+	// lambda.Start(imdbrating.DownloadImdbData)
+	// elapsed := time.Since(start)
+	// log.Printf("Took %s", elapsed)
 
 }

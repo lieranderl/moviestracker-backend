@@ -1,25 +1,34 @@
 package imdbrating
 
 import (
-	"bytes"
 	"compress/gzip"
 	"context"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"cloud.google.com/go/storage"
+	"google.golang.org/api/option"
 )
 
 const (
 	URLBASE        = "https://datasets.imdbws.com/"
 	RATINGSFILEARC = "title.ratings.tsv.gz"
 )
+
+func storageWriter(ctx context.Context) (*storage.Writer, error) {
+	storageClient, err := storage.NewClient(ctx, option.WithCredentialsJSON([]byte(os.Getenv("FIREBASECONFIG"))))
+	if err != nil {
+		return nil, err
+	}
+	bkt := storageClient.Bucket(os.Getenv("FIREBASE_BUCKET"))
+	file := bkt.Object(os.Getenv("FIREBASE_IMDB_FILE"))
+	writer := file.NewWriter(ctx)
+	return writer, nil
+}
 
 func getImdbFile() *http.Response {
 	url := URLBASE + RATINGSFILEARC
@@ -55,13 +64,13 @@ func getImdbFile() *http.Response {
 	return nil
 }
 
-func DownloadImdbData() {
-
+func DownloadImdb() error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	resp := getImdbFile()
 	if resp == nil {
 		log.Fatalln("Empty file")
 	}
-
 	archive, err := gzip.NewReader(resp.Body)
 	if err != nil {
 		log.Fatalln(err)
@@ -69,24 +78,22 @@ func DownloadImdbData() {
 	defer archive.Close()
 	defer resp.Body.Close()
 	var p []byte
-	p, err = ioutil.ReadAll(archive)
+	p, err = io.ReadAll(archive)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	accessKey := os.Getenv("AWSAccessKeyId")
-	secretKey := os.Getenv("AWSSecretKey")
-	client := s3.New(s3.Options{
-		Region:      AWS_S3_REGION,
-		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
-	})
-
-	_, err = client.PutObject(context.Background(), &s3.PutObjectInput{
-		Bucket: aws.String(AWS_S3_BUCKET),
-		Key:    aws.String("title.ratings.tsv"),
-		Body:   bytes.NewBuffer(p),
-	})
+	w, err := storageWriter(ctx)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalln("Failed to init storage writer")
 	}
+	defer w.Close()
+
+	_, err = w.Write(p)
+	if err != nil {
+		log.Fatalln("Failed to write file")
+	}
+
+	return err
+
 }
