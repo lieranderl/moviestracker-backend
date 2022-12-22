@@ -2,10 +2,10 @@ package main
 
 import (
 	// "log"
-	"ex.com/moviestracker/internal/imdbrating"
+	// "ex.com/moviestracker/internal/imdbrating"
 
 	// "github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambda"
+	// "github.com/aws/aws-lambda-go/lambda"
 	// "github.com/joho/godotenv"
 )
 
@@ -28,6 +28,6 @@ func main() {
 	////////////////////////
 	/////////for AWS lambda
 
-	lambda.Start(imdbrating.GetImdbRating)
+	// lambda.Start(imdbrating.GetImdbRating)
 
 }

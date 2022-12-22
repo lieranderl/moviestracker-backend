@@ -1,6 +1,7 @@
 package googlefunc
 
 import (
+
 	"encoding/json"
 	"fmt"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"ex.com/moviestracker/internal/executor"
+	"ex.com/moviestracker/internal/imdbrating"
 
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
 )
@@ -17,6 +19,8 @@ import (
 func init() {
 	functions.HTTP("TorrentsForMovieHandler", TorrentsForMovieHandler)
 	functions.HTTP("Gethdr10movies", Gethdr10movies)
+	functions.HTTP("GetImdbRating", GetImdbRating)
+	functions.HTTP("DownloadImdbData", DownloadImdbData)
 }
 
 func TorrentsForMovieHandler(w http.ResponseWriter, r *http.Request) {
@@ -53,12 +57,14 @@ func TorrentsForMovieHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(err.Error()))
+			return
 		}
 		w.Write(b)
 
 	} else {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("500 - Empty Request"))
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Empty Request"))
+		return
 	}
 }
 
@@ -84,16 +90,58 @@ func Gethdr10movies(w http.ResponseWriter, r *http.Request){
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("500 - Error"))
+		return
 	}
 	
-	// b, err := json.Marshal(pipeline.Movies)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
+		return
 	}
-	// w.Write(b)
 	w.Write([]byte("200 - OK"))
 
+	elapsed := time.Since(start)
+	log.Printf("ALL took %s", elapsed)
+}
+
+
+func GetImdbRating(w http.ResponseWriter, r *http.Request){
+	log.Println("Start GetImdb!")
+	start := time.Now()
+
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	imdb_id := r.URL.Query().Get("imdb_id")
+
+	if (imdb_id=="") {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Empty imdb id request"))
+		return
+	}
+	b, err :=imdbrating.GetImdbRatingById(imdb_id)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+		return
+	} else {
+		w.Write(b)
+	}
+
+	elapsed := time.Since(start)
+	log.Printf("ALL took %s", elapsed)
+}
+
+
+func DownloadImdbData(w http.ResponseWriter, r *http.Request){
+	log.Println("Start DownloadImdbData!")
+	start := time.Now()
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	err := imdbrating.DownloadImdb()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+		return
+	} 
+	w.Write([]byte("200 - OK"))
 	elapsed := time.Since(start)
 	log.Printf("ALL took %s", elapsed)
 }
