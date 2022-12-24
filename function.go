@@ -1,7 +1,6 @@
 package googlefunc
 
 import (
-
 	"encoding/json"
 	"fmt"
 	"log"
@@ -68,7 +67,7 @@ func TorrentsForMovieHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func Gethdr10movies(w http.ResponseWriter, r *http.Request){
+func Gethdr10movies(w http.ResponseWriter, r *http.Request) {
 	log.Println("Start Gethdr10movies!")
 	start := time.Now()
 
@@ -92,7 +91,7 @@ func Gethdr10movies(w http.ResponseWriter, r *http.Request){
 		w.Write([]byte("500 - Error"))
 		return
 	}
-	
+
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
@@ -104,20 +103,19 @@ func Gethdr10movies(w http.ResponseWriter, r *http.Request){
 	log.Printf("ALL took %s", elapsed)
 }
 
-
-func GetImdbRating(w http.ResponseWriter, r *http.Request){
+func GetImdbRating(w http.ResponseWriter, r *http.Request) {
 	log.Println("Start GetImdb!")
 	start := time.Now()
 
 	w.Header().Add("Access-Control-Allow-Origin", "*")
 	imdb_id := r.URL.Query().Get("imdb_id")
 
-	if (imdb_id=="") {
+	if imdb_id == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Empty imdb id request"))
 		return
 	}
-	b, err :=imdbrating.GetImdbRatingById(imdb_id)
+	b, err := imdbrating.GetImdbRatingById(imdb_id)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
@@ -130,8 +128,7 @@ func GetImdbRating(w http.ResponseWriter, r *http.Request){
 	log.Printf("ALL took %s", elapsed)
 }
 
-
-func DownloadImdbData(w http.ResponseWriter, r *http.Request){
+func DownloadImdbData(w http.ResponseWriter, r *http.Request) {
 	log.Println("Start DownloadImdbData!")
 	start := time.Now()
 	w.Header().Add("Access-Control-Allow-Origin", "*")
@@ -140,7 +137,7 @@ func DownloadImdbData(w http.ResponseWriter, r *http.Request){
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
 		return
-	} 
+	}
 	w.Write([]byte("200 - OK"))
 	elapsed := time.Since(start)
 	log.Printf("ALL took %s", elapsed)

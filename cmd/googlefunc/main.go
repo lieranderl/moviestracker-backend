@@ -9,21 +9,22 @@ import (
 	"github.com/GoogleCloudPlatform/functions-framework-go/funcframework"
 	"github.com/joho/godotenv"
 )
+
 func main() {
 	ctx := context.Background()
 
 	err := godotenv.Load()
 	if err != nil {
-	    log.Fatal("Error loading .env file")
+		log.Fatal("Error loading .env file")
 	}
 
-	if err := funcframework.RegisterHTTPFunctionContext(ctx, "/gettorrents", googlefunc.TorrentsForMovieHandler); err != nil {
-		log.Fatalf("funcframework.RegisterHTTPFunctionContext: %v\n", err)
-	}
+	// if err := funcframework.RegisterHTTPFunctionContext(ctx, "/gettorrents", googlefunc.TorrentsForMovieHandler); err != nil {
+	// 	log.Fatalf("funcframework.RegisterHTTPFunctionContext: %v\n", err)
+	// }
 
-	if err := funcframework.RegisterHTTPFunctionContext(ctx, "/gethdr10", googlefunc.Gethdr10movies); err != nil {
-		log.Fatalf("funcframework.RegisterHTTPFunctionContext: %v\n", err)
-	}
+	// if err := funcframework.RegisterHTTPFunctionContext(ctx, "/gethdr10", googlefunc.Gethdr10movies); err != nil {
+	// 	log.Fatalf("funcframework.RegisterHTTPFunctionContext: %v\n", err)
+	// }
 
 	if err := funcframework.RegisterHTTPFunctionContext(ctx, "/getimdb", googlefunc.GetImdbRating); err != nil {
 		log.Fatalf("funcframework.RegisterHTTPFunctionContext: %v\n", err)
