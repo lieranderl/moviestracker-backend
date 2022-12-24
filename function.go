@@ -16,10 +16,49 @@ import (
 )
 
 func init() {
+	functions.HTTP("CollectLatestMovies", CollectLatestMovies)
 	functions.HTTP("TorrentsForMovieHandler", TorrentsForMovieHandler)
 	functions.HTTP("Gethdr10movies", Gethdr10movies)
 	functions.HTTP("GetImdbRating", GetImdbRating)
 	functions.HTTP("DownloadImdbData", DownloadImdbData)
+}
+
+
+func CollectLatestMovies(w http.ResponseWriter, r *http.Request) {
+	log.Println("Start CollectLatestMovies!")
+	start := time.Now()
+
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+
+	pipeline := executor.Init(
+		strings.Split(os.Getenv("RUTOR_URLS"), ","),
+		os.Getenv("TMDBAPIKEY"),
+		os.Getenv("FIREBASE_PROJECT"),
+		os.Getenv("FIREBASECONFIG"),
+		true,
+	)
+	err := pipeline.
+		RunRutorPipiline().
+		ConvertTorrentsToMovieShort().
+		Tmdb().
+		SaveToDb("latesttorrentsmovies").
+		DeleteOldMoviesFromDb().
+		HandleErrors()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("500 - Error"))
+		return
+	}
+
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+		return
+	}
+	w.Write([]byte("200 - OK"))
+
+	elapsed := time.Since(start)
+	log.Printf("ALL took %s", elapsed)
 }
 
 func TorrentsForMovieHandler(w http.ResponseWriter, r *http.Request) {
