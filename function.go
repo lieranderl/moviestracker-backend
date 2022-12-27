@@ -21,6 +21,7 @@ func init() {
 	functions.HTTP("Gethdr10movies", Gethdr10movies)
 	functions.HTTP("GetImdbRating", GetImdbRating)
 	functions.HTTP("DownloadImdbData", DownloadImdbData)
+	functions.HTTP("Getdvmovies", Getdvmovies)
 }
 
 
@@ -124,6 +125,42 @@ func Gethdr10movies(w http.ResponseWriter, r *http.Request) {
 		ConvertTorrentsToMovieShort().
 		Tmdb().
 		SaveToDb("hdr10movies").
+		HandleErrors()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("500 - Error"))
+		return
+	}
+
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+		return
+	}
+	w.Write([]byte("200 - OK"))
+
+	elapsed := time.Since(start)
+	log.Printf("ALL took %s", elapsed)
+}
+
+func Getdvmovies(w http.ResponseWriter, r *http.Request) {
+	log.Println("Start Get dv movies!")
+	start := time.Now()
+
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+
+	pipeline := executor.Init(
+		strings.Split(os.Getenv("RUTOR_DV_URLS"), ","),
+		os.Getenv("TMDBAPIKEY"),
+		os.Getenv("FIREBASE_PROJECT"),
+		os.Getenv("FIREBASECONFIG"),
+		true,
+	)
+	err := pipeline.
+		RunRutorPipiline().
+		ConvertTorrentsToMovieShort().
+		Tmdb().
+		SaveToDb("dvmovies").
 		HandleErrors()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
