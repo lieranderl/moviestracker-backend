@@ -2,15 +2,14 @@ package imdbrating
 
 import (
 	"bufio"
+	"bytes"
+	"cloud.google.com/go/storage"
 	"context"
 	"encoding/json"
+	"google.golang.org/api/option"
 	"os"
 	"strings"
-
-	"cloud.google.com/go/storage"
-	"google.golang.org/api/option"
 )
-
 
 type imdbRating struct {
 	Id     string
@@ -32,28 +31,26 @@ func storageReader(ctx context.Context) (*storage.Reader, error) {
 	return reader, nil
 }
 
-
 func GetImdbRatingById(imdb_id string) ([]byte, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	b := make([]byte,0)
 	reader, err := storageReader(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer reader.Close()
-
-    fileScanner := bufio.NewScanner(reader)
-    fileScanner.Split(bufio.ScanLines)
-    for fileScanner.Scan() {
-    	if strings.Contains(fileScanner.Text(), imdb_id) {
+	dat := make([]byte, 0)
+	fileScanner := bufio.NewScanner(reader)
+	fileScanner.Split(bufio.ScanLines)
+	for fileScanner.Scan() {
+		if bytes.Contains(fileScanner.Bytes(), []byte(imdb_id)) {
 			split := strings.Split(fileScanner.Text(), "	")
-			if (len(split)==3) {
+			if len(split) == 3 {
 				imdb := new(imdbRating)
 				imdb.Id = split[0]
 				imdb.Rating = split[1]
 				imdb.Votes = split[2]
-				b, err = json.Marshal(imdb)
+				dat, err = json.Marshal(imdb)
 				if err != nil {
 					return nil, err
 				}
@@ -62,6 +59,6 @@ func GetImdbRatingById(imdb_id string) ([]byte, error) {
 			}
 			break
 		}
-    }
-	return b, nil
+	}
+	return dat, nil
 }

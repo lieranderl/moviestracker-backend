@@ -26,17 +26,17 @@ func main() {
 	// 	log.Fatalf("funcframework.RegisterHTTPFunctionContext: %v\n", err)
 	// }
 
-	// if err := funcframework.RegisterHTTPFunctionContext(ctx, "/getimdb", googlefunc.GetImdbRating); err != nil {
-	// 	log.Fatalf("funcframework.RegisterHTTPFunctionContext: %v\n", err)
-	// }
+	if err := funcframework.RegisterHTTPFunctionContext(ctx, "/getimdb", googlefunc.GetImdbRating); err != nil {
+		log.Fatalf("funcframework.RegisterHTTPFunctionContext: %v\n", err)
+	}
 
 	// if err := funcframework.RegisterHTTPFunctionContext(ctx, "/collectlatestmovies", googlefunc.CollectLatestMovies); err != nil {
 	// 	log.Fatalf("funcframework.RegisterHTTPFunctionContext: %v\n", err)
 	// }
 
-	if err := funcframework.RegisterHTTPFunctionContext(ctx, "/getdvmovies", googlefunc.Getdvmovies); err != nil {
-		log.Fatalf("funcframework.RegisterHTTPFunctionContext: %v\n", err)
-	}
+	// if err := funcframework.RegisterHTTPFunctionContext(ctx, "/getdvmovies", googlefunc.Getdvmovies); err != nil {
+	// 	log.Fatalf("funcframework.RegisterHTTPFunctionContext: %v\n", err)
+	// }
 	
 	// if err := funcframework.RegisterHTTPFunctionContext(ctx, "/downloadimdb", googlefunc.DownloadImdbData); err != nil {
 	// 	log.Fatalf("funcframework.RegisterHTTPFunctionContext: %v\n", err)
