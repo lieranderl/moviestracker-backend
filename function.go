@@ -20,7 +20,7 @@ func init() {
 	functions.HTTP("TorrentsForMovieHandler", TorrentsForMovieHandler)
 	functions.HTTP("Gethdr10movies", Gethdr10movies)
 	functions.HTTP("GetImdbRating", GetImdbRating)
-	functions.HTTP("DownloadImdbData", DownloadImdbData)
+	// functions.HTTP("DownloadImdbData", DownloadImdbData)
 	functions.HTTP("Getdvmovies", Getdvmovies)
 }
 
@@ -204,17 +204,17 @@ func GetImdbRating(w http.ResponseWriter, r *http.Request) {
 	log.Printf("ALL took %s", elapsed)
 }
 
-func DownloadImdbData(w http.ResponseWriter, r *http.Request) {
-	log.Println("Start DownloadImdbData!")
-	start := time.Now()
-	w.Header().Add("Access-Control-Allow-Origin", "*")
-	err := imdbrating.DownloadImdb()
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(err.Error()))
-		return
-	}
-	w.Write([]byte("200 - OK"))
-	elapsed := time.Since(start)
-	log.Printf("ALL took %s", elapsed)
-}
+// func DownloadImdbData(w http.ResponseWriter, r *http.Request) {
+// 	log.Println("Start DownloadImdbData!")
+// 	start := time.Now()
+// 	w.Header().Add("Access-Control-Allow-Origin", "*")
+// 	err := imdbrating.DownloadImdb()
+// 	if err != nil {
+// 		w.WriteHeader(http.StatusInternalServerError)
+// 		w.Write([]byte(err.Error()))
+// 		return
+// 	}
+// 	w.Write([]byte("200 - OK"))
+// 	elapsed := time.Since(start)
+// 	log.Printf("ALL took %s", elapsed)
+// }
