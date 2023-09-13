@@ -1,0 +1,10 @@
+# Ignore everything
+*
+
+# Except build folders
+!/cmd
+!/imdbrating
+!go.mod
+!go.sum
+!Dockerfile
+!.dockerignore
