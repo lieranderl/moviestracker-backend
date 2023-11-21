@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
-	"github.com/lieranderl/moviestracker-package/executor" 
+	"github.com/lieranderl/moviestracker-package/executor"
 )
 
 func init() {
@@ -29,16 +29,11 @@ func TorrentsForMovieHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println(moviename, year, ismovie)
 
 	if moviename != "" || year != "" || ismovie != "" {
-		pipeline := executor.Init(
-			[]string{
-				fmt.Sprintf(os.Getenv("RUTOR_SEARCH_URL"), moviename, year),
-				fmt.Sprintf(os.Getenv("KZ_SEARCH_URL"), moviename, year),
-			},
-			"",
-			"",
-			"",
-			false,
-		)
+		env_vars := executor.InitVars([]string{
+			fmt.Sprintf(os.Getenv("RUTOR_SEARCH_URL"), moviename, year),
+			fmt.Sprintf(os.Getenv("KZ_SEARCH_URL"), moviename, year),
+		}, os.Getenv("TMDBAPIKEY"))
+		pipeline := executor.Init(*env_vars)
 		err := pipeline.RunTrackersSearchPipilene(ismovie).HandleErrors()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -46,7 +41,7 @@ func TorrentsForMovieHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		elapsed := time.Since(start)
 		log.Printf("ALL took %s", elapsed)
-		b, err := json.Marshal(pipeline.Torrents)
+		b, err := json.Marshal(pipeline.GetTorrents())
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(err.Error()))
