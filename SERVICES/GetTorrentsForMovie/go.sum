@@ -107,8 +107,8 @@ github.com/kylelemons/go-gypsy v1.0.0 h1:7/wQ7A3UL1bnqRMnZ6T8cwCOArfZCxFmb1iTxaO
 github.com/kylelemons/go-gypsy v1.0.0/go.mod h1:chkXM0zjdpXOiqkCW1XcCHDfjfk14PH2KKkQWxfJUcU=
 github.com/lieranderl/go-tmdb v1.1.0 h1:sQlAbKiCF64H3WrOWXUM3rrRf3w+iREpzWRjsEqpy6o=
 github.com/lieranderl/go-tmdb v1.1.0/go.mod h1:2XThBLLOUIbcU0/vU6pEApNv1dpggJzTPquTrw8C3Q4=
-github.com/lieranderl/moviestracker-package v1.1.4 h1:/T9uYeyuZ1piyIHHrZcvACLqppA6C7GFfzi8OhwJblc=
-github.com/lieranderl/moviestracker-package v1.1.4/go.mod h1:GmXua6h1jRyLiE2eIPxqSnDWQS3ZZA1kUQrdLM2AYEU=
+github.com/lieranderl/moviestracker-package v1.1.5 h1:T04lsRUV3Xym6ucrcncPzeogeDfDO/kP8nGa9ZKLBMY=
+github.com/lieranderl/moviestracker-package v1.1.5/go.mod h1:GmXua6h1jRyLiE2eIPxqSnDWQS3ZZA1kUQrdLM2AYEU=
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd h1:TRLaZ9cD/w8PVh93nsPXa1VrQ6jlwL5oN8l14QlcNfg=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
