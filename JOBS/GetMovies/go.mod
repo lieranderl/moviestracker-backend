@@ -2,7 +2,7 @@ module moviestracker.net/getmovies
 
 go 1.23.3
 
-require github.com/lieranderl/moviestracker-package v1.1.3
+require github.com/lieranderl/moviestracker-package v1.1.4
 
 require (
 	cloud.google.com/go v0.116.0 // indirect

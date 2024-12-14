@@ -5,7 +5,7 @@ go 1.23.3
 require (
 	github.com/GoogleCloudPlatform/functions-framework-go v1.9.0
 	github.com/joho/godotenv v1.5.1
-	github.com/lieranderl/moviestracker-package v1.1.3
+	github.com/lieranderl/moviestracker-package v1.1.4
 )
 
 require (
