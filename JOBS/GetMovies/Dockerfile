@@ -1,10 +1,10 @@
-FROM golang:1.21-bullseye AS build-env
+FROM golang:1.23-bullseye AS build-env
 WORKDIR /app
 COPY . .
 RUN go mod download
 RUN go build -o getmovies cmd/main.go 
 
-FROM golang:1.21-bullseye 
+FROM golang:1.23-bullseye 
 WORKDIR /app
 COPY --from=build-env /app/getmovies /app/getmovies
 

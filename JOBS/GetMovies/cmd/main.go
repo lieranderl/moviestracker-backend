@@ -1,12 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"strings"
 	"time"
 
-	// "github.com/joho/godotenv"
 	"github.com/lieranderl/moviestracker-package/executor"
 )
 
@@ -35,29 +35,33 @@ func main() {
 	log.Printf("Start %s !", dbname)
 	start := time.Now()
 
-	//	latesttorrentsmovies	strings.Split(os.Getenv("RUTOR_URLS"), ","),
-	//	hdr10movies	strings.Split(os.Getenv("RUTOR_HDR10_URLS"), ","),
-	//	dvmovies	strings.Split(os.Getenv("RUTOR_DV_URLS"), ","),
+	// Initialize the pipeline
 
-	env_vars := executor.InitVars(strings.Split(urls, ","), os.Getenv("TMDBAPIKEY"))
 	switch dbtype {
 	case "mongo":
-		env_vars.WithMongo(os.Getenv("MONGO_URI"))
+		pipeline := executor.InitPipeline(context.Background(), strings.Split(urls, ","), os.Getenv("TMDBAPIKEY"), executor.OptionWithMongo(os.Getenv("MONGO_URI")))
+		err := pipeline.
+			RunTrackersSearchPipeline(true).
+			ConvertTorrentsToMovieShort().
+			Tmdb().
+			SaveToDb().
+			// DeleteOldMoviesFromDb().
+			HandleErrors()
+		if err != nil {
+			return
+		}
 	case "firebase":
-		env_vars.WithFirebase(os.Getenv("FIREBASE_PROJECT"), os.Getenv("FIREBASECONFIG"))
-	}
-	pipeline := executor.Init(
-		*env_vars,
-	)
-	err := pipeline.
-		RunRutorPipiline().
-		ConvertTorrentsToMovieShort().
-		Tmdb().
-		SaveToDb(dbname, dbtype).
-		// DeleteOldMoviesFromDb().
-		HandleErrors()
-	if err != nil {
-		return
+		pipeline := executor.InitPipeline(context.Background(), strings.Split(urls, ","), os.Getenv("TMDBAPIKEY"), executor.OptionWithFirebase(os.Getenv("FIREBASE_PROJECT"), os.Getenv("FIREBASECONFIG")))
+		err := pipeline.
+			RunTrackersSearchPipeline(true).
+			ConvertTorrentsToMovieShort().
+			Tmdb().
+			SaveToDb().
+			// DeleteOldMoviesFromDb().
+			HandleErrors()
+		if err != nil {
+			return
+		}
 	}
 
 	elapsed := time.Since(start)

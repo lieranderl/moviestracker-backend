@@ -7,7 +7,7 @@ TASK_TIMEOUT=60s
 gcloud functions deploy get-imdb-rating-service \
     --gen2 \
     --region=europe-west1 \
-    --runtime=go121 \
+    --runtime=go123 \
     --source=. \
     --entry-point=GetImdbRating \
     --set-env-vars FIREBASE_BUCKET=$FIREBASE_BUCKET \

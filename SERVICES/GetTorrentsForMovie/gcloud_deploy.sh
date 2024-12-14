@@ -4,7 +4,7 @@ KZ_PASSWORD_VERSION=1
 gcloud functions deploy get-torrents-for-movie-service \
     --gen2 \
     --region=europe-west1 \
-    --runtime=go121 \
+    --runtime=go123 \
     --source=. \
     --entry-point=TorrentsForMovieHandler \
     --set-env-vars RUTOR_SEARCH_URL='http://rutor.is/search/0/0/300/0/%s %s (2160p|1080p)' \
