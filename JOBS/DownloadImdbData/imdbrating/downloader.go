@@ -2,36 +2,19 @@ package imdbrating
 
 import (
 	"compress/gzip"
-	"context"
+	// "context"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
-
-	"cloud.google.com/go/storage"
-	"google.golang.org/api/option"
 )
 
 const (
 	URLBASE        = "https://datasets.imdbws.com/"
 	RATINGSFILEARC = "title.ratings.tsv.gz"
 )
-
-func storageWriter(ctx context.Context) (*storage.Writer, error) {
-	// Init storage client. Firestore credentials are stored in FIREBASECONFIG env variable/secret
-	storageClient, err := storage.NewClient(ctx, option.WithCredentialsJSON([]byte(os.Getenv("FIREBASECONFIG"))))
-	if err != nil {
-		return nil, err
-	}
-	// init storage bucket and file
-	bkt := storageClient.Bucket(os.Getenv("FIREBASE_BUCKET"))
-	file := bkt.Object(os.Getenv("FIREBASE_IMDB_FILE"))
-	// init storage writer
-	writer := file.NewWriter(ctx)
-	return writer, nil
-}
 
 func getImdbFile() *http.Response {
 	url := URLBASE + RATINGSFILEARC
@@ -68,9 +51,6 @@ func getImdbFile() *http.Response {
 }
 
 func DownloadImdb() {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	// Get the file from imdbws
 	resp := getImdbFile()
 	if resp == nil {
@@ -91,17 +71,10 @@ func DownloadImdb() {
 		log.Fatalln(err)
 	}
 
-	//Make storage writer
-	w, err := storageWriter(ctx)
+	// save file to volume
+	err = os.WriteFile("./store/imdb_data.tsv", file, 0644)
 	if err != nil {
-		log.Fatalln("Failed to init storage writer", err)
+		log.Fatalln("Failed to save file to volume", err)
 	}
-	defer w.Close()
 
-	//Write the unzipped file to storage
-	n, err := w.Write(file)
-	if err != nil {
-		log.Fatalln("Failed to write file", err)
-	}
-	log.Printf("Wrote %d bytes to storage", n)
 }
