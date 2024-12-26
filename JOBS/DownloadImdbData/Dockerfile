@@ -2,9 +2,9 @@ FROM golang:1.23-bullseye AS build-env
 WORKDIR /app
 COPY . .
 RUN go mod download
-RUN go build -o downloadimdbdata cmd/main.go
+RUN CGO_ENABLED=0 go build -o downloadimdbdata cmd/main.go
 
-FROM golang:1.23-bullseye
+FROM alpine:latest
 WORKDIR /app
 RUN mkdir /app/store
 COPY --from=build-env /app/downloadimdbdata /app/downloadimdbdata

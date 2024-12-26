@@ -42,6 +42,7 @@ if ! gcloud run jobs create getmovies-$DBNAME-job \
     --args $DBNAME \
     --task-timeout $TASK_TIMEOUT \
     --max-retries $MAX_RETRY \
+    --region=europe-west1 \
     --set-secrets FIREBASECONFIG=FIREBASEADMIN_CONFIG:$FIREBASECONFIG_VERSION \
     --set-secrets TMDBAPIKEY=TMDBAPIKEY:latest \
     --set-secrets MONGO_URI=MONGO_URI:latest \
@@ -52,13 +53,14 @@ if ! gcloud run jobs create getmovies-$DBNAME-job \
     --set-env-vars ^##^RUTOR_DV_URLS=$RUTOR_DV_URLS \
     --set-env-vars FIREBASE_PROJECT=$FIREBASE_PROJECT; then
     echo "job already exists, updating..."
-    gcloud run jobs update getmovies-$DBNAME-job --clear-env-vars
+    gcloud run jobs update getmovies-$DBNAME-job --clear-env-vars --region=europe-west1
     gcloud run jobs update getmovies-$DBNAME-job \
         --image $IMAGE_URL \
         --args $DBNAME \
         --args $DBTYPE \
         --task-timeout $TASK_TIMEOUT \
         --max-retries $MAX_RETRY \
+        --region=europe-west1 \
         --update-secrets FIREBASECONFIG=FIREBASEADMIN_CONFIG:$FIREBASECONFIG_VERSION \
         --update-secrets TMDBAPIKEY=TMDBAPIKEY:latest \
         --update-secrets MONGO_URI=MONGO_URI:latest \
@@ -68,5 +70,4 @@ if ! gcloud run jobs create getmovies-$DBNAME-job \
         --update-env-vars ^##^RUTOR_HDR10_URLS=$RUTOR_HDR10_URLS \
         --update-env-vars ^##^RUTOR_DV_URLS=$RUTOR_DV_URLS \
         --update-env-vars FIREBASE_PROJECT=$FIREBASE_PROJECT
-
 fi
