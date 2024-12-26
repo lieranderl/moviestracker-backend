@@ -3,10 +3,7 @@ package imdbrating
 import (
 	"bufio"
 	"bytes"
-	"cloud.google.com/go/storage"
-	"context"
 	"encoding/json"
-	"google.golang.org/api/option"
 	"os"
 	"strings"
 )
@@ -17,28 +14,13 @@ type imdbRating struct {
 	Votes  string
 }
 
-func storageReader(ctx context.Context) (*storage.Reader, error) {
-	storageClient, err := storage.NewClient(ctx, option.WithCredentialsJSON([]byte(os.Getenv("FIREBASECONFIG"))))
-	if err != nil {
-		return nil, err
-	}
-	bkt := storageClient.Bucket(os.Getenv("FIREBASE_BUCKET"))
-	file := bkt.Object(os.Getenv("FIREBASE_IMDB_FILE"))
-	reader, err := file.NewReader(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return reader, nil
-}
-
 func GetImdbRatingById(imdb_id string) ([]byte, error) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	reader, err := storageReader(ctx)
+	file, err := os.Open("./store/imdb_data.tsv")
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Close()
+	defer file.Close()
+	reader := bufio.NewReader(file)
 	dat := make([]byte, 0)
 	fileScanner := bufio.NewScanner(reader)
 	fileScanner.Split(bufio.ScanLines)

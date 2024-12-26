@@ -1,18 +1,13 @@
+IMAGE_URL=europe-west1-docker.pkg.dev/moviestracker-f07e2/gcf-artifacts/get-imdb-rating-service
 FIREBASE_BUCKET=moviestracker-f07e2.appspot.com
-FIREBASE_IMDB_FILE=imdb_data.tsv
-FIREBASECONFIG_VERSION=3
 MAX_RETRY=1
 TASK_TIMEOUT=60s
-# zip -r getimdbrating.zip imdbrating function.go go.mod 
-gcloud functions deploy get-imdb-rating-service \
-    --gen2 \
-    --region=europe-west1 \
-    --runtime=go123 \
-    --source=. \
-    --entry-point=GetImdbRating \
-    --set-env-vars FIREBASE_BUCKET=$FIREBASE_BUCKET \
-    --set-env-vars FIREBASE_IMDB_FILE=$FIREBASE_IMDB_FILE \
-    --set-secrets FIREBASECONFIG=FIREBASEADMIN_CONFIG:$FIREBASECONFIG_VERSION \
-    --memory=128Mi \
-    --trigger-http \
-    --allow-unauthenticated
+
+gcloud builds submit --tag $IMAGE_URL --region=europe-west1
+gcloud run services update get-imdb-rating-service \
+    --image $IMAGE_URL:latest \
+    --timeout $TASK_TIMEOUT \
+    --add-volume=name=imdb-mount,type=cloud-storage,bucket=$FIREBASE_BUCKET \
+    --add-volume-mount=volume=imdb-mount,mount-path=/app/store \
+    --port 8080 \
+    --region=europe-west1

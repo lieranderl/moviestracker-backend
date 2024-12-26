@@ -1,4 +1,4 @@
 .env
 gcloud_deploy.sh
-/cmd
 .gcloudignore
+/store
