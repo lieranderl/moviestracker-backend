@@ -59,7 +59,7 @@ func run(parent context.Context, args []string, getenv func(string) string) erro
 		}
 		envVars := executor.InitVars(urls, tmdbAPIKey).WithMongo(mongoURI)
 		pipelineErr = executor.Init(*envVars).
-			RunTrackersSearchPipeline(true).
+			RunRutorPipeline().
 			ConvertTorrentsToMovieShort().
 			Tmdb().
 			SaveToMongo(dbname).
