@@ -1,0 +1,25 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key
+      - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt (staged files)
+        language: system
+        entry: bash -c 'if [ "$#" -gt 0 ]; then gofmt -w "$@"; fi'
+        types: [go]
+
+      - id: go-module-checks
+        name: go vet + go test (changed modules)
+        language: system
+        entry: scripts/precommit-go-checks.sh
+        pass_filenames: true
+        stages: [pre-commit]

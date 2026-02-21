@@ -1,3 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 IMAGE_URL=europe-west1-docker.pkg.dev/moviestracker-f07e2/gcf-artifacts/downloadimdbdata-image
 FIREBASE_BUCKET=moviestracker-imdb-store
 MAX_RETRY=1

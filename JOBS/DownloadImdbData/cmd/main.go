@@ -10,7 +10,9 @@ import (
 func main() {
 	log.Println("Start DownloadImdbData!")
 	start := time.Now()
-	imdbrating.DownloadImdb()
+	if err := imdbrating.DownloadImdb(); err != nil {
+		log.Fatalf("download imdb data failed: %v", err)
+	}
 	elapsed := time.Since(start)
 	log.Printf("ALL took %s", elapsed)
 }

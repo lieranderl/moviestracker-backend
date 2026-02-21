@@ -1,11 +1,12 @@
-FROM golang:1.23-bullseye AS build-env
-WORKDIR /app
-COPY . .
+FROM golang:1.25-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
 RUN go mod download
-RUN CGO_ENABLED=0 go build -o getimdb cmd/main.go
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/getimdb ./cmd/main.go
 
-FROM alpine:latest
+FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
-RUN mkdir /app/store
-COPY --from=build-env /app/getimdb /app/getimdb
-CMD ["/app/getimdb"]
+COPY --from=build /out/getimdb /app/getimdb
+USER nonroot:nonroot
+ENTRYPOINT ["/app/getimdb"]

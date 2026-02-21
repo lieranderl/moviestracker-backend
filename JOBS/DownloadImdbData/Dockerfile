@@ -1,11 +1,14 @@
-FROM golang:1.23-bullseye AS build-env
-WORKDIR /app
-COPY . .
+FROM golang:1.25-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
 RUN go mod download
-RUN CGO_ENABLED=0 go build -o downloadimdbdata cmd/main.go
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/downloadimdbdata ./cmd/main.go
 
-FROM alpine:latest
+FROM alpine:3.21
+RUN addgroup -S app && adduser -S -G app app
 WORKDIR /app
-RUN mkdir /app/store
-COPY --from=build-env /app/downloadimdbdata /app/downloadimdbdata
-CMD ["/app/downloadimdbdata"]
+RUN mkdir -p /app/store && chown -R app:app /app
+COPY --from=build /out/downloadimdbdata /app/downloadimdbdata
+USER app
+ENTRYPOINT ["/app/downloadimdbdata"]

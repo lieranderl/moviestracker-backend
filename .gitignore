@@ -1,3 +1,5 @@
 .env
 .DS_Store
 imdb_data.tsv
+.cache/
+.coverage/

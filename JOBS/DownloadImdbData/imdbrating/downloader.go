@@ -2,79 +2,86 @@ package imdbrating
 
 import (
 	"compress/gzip"
-	// "context"
+	"context"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
-	"strconv"
+	"path/filepath"
 	"time"
 )
 
 const (
-	URLBASE        = "https://datasets.imdbws.com/"
-	RATINGSFILEARC = "title.ratings.tsv.gz"
+	urlBase         = "https://datasets.imdbws.com/"
+	ratingsFileArch = "title.ratings.tsv.gz"
+	defaultDestPath = "./store/imdb_data.tsv"
 )
 
-func getImdbFile() *http.Response {
-	url := URLBASE + RATINGSFILEARC
-	start := time.Now()
+func DownloadImdb() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
 
-	// Probe the Content-Length header by sending an HTTP HEAD request
-	headResp, err := http.Head(url)
-	if err != nil {
-		panic(err)
-	}
-	defer headResp.Body.Close()
-
-	// Get the size from the Content-Length header
-	size, err := strconv.Atoi(headResp.Header.Get("Content-Length"))
-	if err != nil {
-		log.Println("Failed to get Content-Length header", err)
-	}
-	sizeMb := float64(size) * 0.000001
-
-	//Get data from url
-	resp, err := http.Get(url)
-	if err != nil {
-		log.Fatalln("Unable to download file.", err)
-	}
-
-	// Return response if status code is 200
-	if resp.StatusCode == 200 {
-		elapsed := time.Since(start)
-		log.Printf("%0.3f MB downloaded completed in %s", sizeMb, elapsed)
-		return resp
-	}
-	// Return nil if status code is not 200
-	return nil
+	client := &http.Client{Timeout: 2 * time.Minute}
+	return DownloadImdbToFile(ctx, client, urlBase+ratingsFileArch, defaultDestPath)
 }
 
-func DownloadImdb() {
-	// Get the file from imdbws
-	resp := getImdbFile()
-	if resp == nil {
-		log.Fatalln("Empty file")
+func DownloadImdbToFile(ctx context.Context, client *http.Client, sourceURL, destPath string) error {
+	start := time.Now()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
 	}
-	// Make zip reader for resp.Body. Unzip on the fly.
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("download imdb ratings archive: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected response status: %s", resp.Status)
+	}
+
 	archive, err := gzip.NewReader(resp.Body)
 	if err != nil {
-		log.Fatalln(err)
+		return fmt.Errorf("create gzip reader: %w", err)
 	}
 	defer archive.Close()
-	defer resp.Body.Close()
 
-	//Read zip file. This is the unzipped file we want to store in storage
-	var file []byte
-	file, err = io.ReadAll(archive)
-	if err != nil {
-		log.Fatalln(err)
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return fmt.Errorf("create destination directory: %w", err)
 	}
 
-	// save file to volume
-	err = os.WriteFile("./store/imdb_data.tsv", file, 0644)
+	tmpPath := destPath + ".tmp"
+	tmpFile, err := os.Create(tmpPath)
 	if err != nil {
-		log.Fatalln("Failed to save file to volume", err)
+		return fmt.Errorf("create temporary file: %w", err)
+	}
+	defer func() {
+		_ = tmpFile.Close()
+	}()
+
+	written, err := io.Copy(tmpFile, archive)
+	if err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("decompress imdb data: %w", err)
 	}
 
+	if err := tmpFile.Sync(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("sync temporary file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("close temporary file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("replace destination file: %w", err)
+	}
+
+	elapsed := time.Since(start)
+	log.Printf("downloaded %d bytes to %s in %s", written, destPath, elapsed)
+	return nil
 }

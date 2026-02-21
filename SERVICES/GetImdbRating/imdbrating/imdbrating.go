@@ -2,45 +2,63 @@ package imdbrating
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"strings"
 )
 
-type imdbRating struct {
-	Id     string
+const defaultDataFilePath = "./store/imdb_data.tsv"
+
+var ErrRatingNotFound = errors.New("imdb rating not found")
+
+type IMDbRating struct {
+	ID     string `json:"Id"`
 	Rating string
 	Votes  string
 }
 
-func GetImdbRatingById(imdb_id string) ([]byte, error) {
-	file, err := os.Open("./store/imdb_data.tsv")
+func GetImdbRatingById(imdbID string) ([]byte, error) {
+	return GetImdbRatingByIdFromFile(defaultDataFilePath, imdbID)
+}
+
+func GetImdbRatingByIdFromFile(dataFilePath, imdbID string) ([]byte, error) {
+	if strings.TrimSpace(imdbID) == "" {
+		return nil, errors.New("imdb id is required")
+	}
+
+	file, err := os.Open(dataFilePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open imdb data file: %w", err)
 	}
 	defer file.Close()
-	reader := bufio.NewReader(file)
-	dat := make([]byte, 0)
-	fileScanner := bufio.NewScanner(reader)
+
+	fileScanner := bufio.NewScanner(file)
+	fileScanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	fileScanner.Split(bufio.ScanLines)
+
 	for fileScanner.Scan() {
-		if bytes.Contains(fileScanner.Bytes(), []byte(imdb_id)) {
-			split := strings.Split(fileScanner.Text(), "	")
-			if len(split) == 3 {
-				imdb := new(imdbRating)
-				imdb.Id = split[0]
-				imdb.Rating = split[1]
-				imdb.Votes = split[2]
-				dat, err = json.Marshal(imdb)
-				if err != nil {
-					return nil, err
-				}
-			} else {
-				return nil, err
-			}
-			break
+		split := strings.Split(fileScanner.Text(), "\t")
+		if len(split) != 3 || split[0] != imdbID {
+			continue
 		}
+
+		result := IMDbRating{
+			ID:     split[0],
+			Rating: split[1],
+			Votes:  split[2],
+		}
+		payload, err := json.Marshal(result)
+		if err != nil {
+			return nil, fmt.Errorf("marshal imdb rating response: %w", err)
+		}
+		return payload, nil
 	}
-	return dat, nil
+
+	if err := fileScanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan imdb data file: %w", err)
+	}
+
+	return nil, ErrRatingNotFound
 }
