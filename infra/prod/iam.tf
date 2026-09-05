@@ -65,16 +65,19 @@ resource "google_secret_manager_secret_iam_member" "catalog_tmdb" {
   member    = "serviceAccount:${google_service_account.catalog_jobs.email}"
 }
 
-resource "google_service_account_iam_member" "github_act_as" {
+resource "google_service_account_iam_member" "github_backend_act_as" {
   for_each = {
-    app             = google_service_account.app.name
     catalog_jobs    = google_service_account.catalog_jobs.name
-    gateway         = google_service_account.gateway.name
     imdb_downloader = google_service_account.imdb_downloader.name
     imdb_service    = google_service_account.imdb_service.name
-    scheduler       = google_service_account.scheduler.name
   }
   service_account_id = each.value
   role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:movies-github-deployer@${var.project_id}.iam.gserviceaccount.com"
+  member             = "serviceAccount:movies-backend-deployer@${var.project_id}.iam.gserviceaccount.com"
+}
+
+resource "google_service_account_iam_member" "github_frontend_act_as" {
+  service_account_id = google_service_account.app.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:movies-frontend-deployer@${var.project_id}.iam.gserviceaccount.com"
 }

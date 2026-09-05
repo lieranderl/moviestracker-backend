@@ -18,11 +18,14 @@ variable "artifact_repository" {
   default = "moviestracker"
 }
 
-variable "github_repositories" {
-  description = "GitHub repositories trusted for release-tag deployments."
-  type        = set(string)
-  default = [
-    "lieranderl/moviestracker-backend",
-    "lieranderl/qwik-moviestracker",
-  ]
+variable "backend_repository_id" {
+  description = "Immutable GitHub repository ID trusted for backend release tags."
+  type        = string
+  default     = "518156345"
+}
+
+variable "frontend_repository_id" {
+  description = "Immutable GitHub repository ID trusted for frontend release tags."
+  type        = string
+  default     = "674721161"
 }
