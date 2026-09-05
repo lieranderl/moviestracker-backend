@@ -280,3 +280,12 @@ func (m *Manager) Generation() int64 {
 	}
 	return current.generation
 }
+
+// Len reports how many rows the live index holds.
+func (m *Manager) Len() int {
+	current := m.current.Load()
+	if current == nil {
+		return 0
+	}
+	return current.index.Len()
+}
