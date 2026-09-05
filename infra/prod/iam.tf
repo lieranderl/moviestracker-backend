@@ -65,6 +65,13 @@ resource "google_secret_manager_secret_iam_member" "catalog_tmdb" {
   member    = "serviceAccount:${google_service_account.catalog_jobs.email}"
 }
 
+resource "google_secret_manager_secret_iam_member" "github_gateway_api_key" {
+  project   = var.project_id
+  secret_id = "GC_API_KEY"
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:movies-backend-deployer@${var.project_id}.iam.gserviceaccount.com"
+}
+
 resource "google_service_account_iam_member" "github_backend_act_as" {
   for_each = {
     catalog_jobs    = google_service_account.catalog_jobs.name

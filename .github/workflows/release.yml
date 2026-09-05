@@ -129,8 +129,12 @@ jobs:
       - name: Smoke IMDb gateway
         env:
           API_GATEWAY_URL: ${{ vars.API_GATEWAY_URL }}
-          API_KEY: ${{ secrets.GC_API_KEY }}
-        run: curl --fail --show-error --silent "${API_GATEWAY_URL}/getimdb?imdb_id=tt0133093&key=${API_KEY}" | jq -e '.Id == "tt0133093"'
+        run: |
+          api_key="$(gcloud secrets versions access latest --secret=GC_API_KEY --project="$GCP_PROJECT")"
+          curl --fail --show-error --silent \
+            --header "x-api-key: ${api_key}" \
+            "${API_GATEWAY_URL}/getimdb?imdb_id=tt0133093" \
+            | jq -e '.Id == "tt0133093"'
       - name: Roll back workload images on failure
         if: failure()
         run: |
