@@ -28,6 +28,5 @@ resource "google_cloud_scheduler_job" "jobs" {
   depends_on = [
     google_cloud_run_v2_job_iam_member.scheduler_catalog_invoker,
     google_cloud_run_v2_job_iam_member.scheduler_imdb_invoker,
-    google_service_account_iam_member.github_act_as,
   ]
 }

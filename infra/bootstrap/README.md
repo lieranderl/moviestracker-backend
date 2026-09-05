@@ -11,8 +11,10 @@ tofu plan -out=bootstrap.tfplan
 tofu apply bootstrap.tfplan
 ```
 
-The stack also creates the release-tag-only GitHub OIDC trust and a deployer
-that can push to the MoviesTracker Artifact Registry repository and update
-Cloud Run workloads. It cannot change IAM, secrets, databases, monitoring,
+The stack also creates release-tag-only GitHub OIDC trust and separate backend
+and frontend deployers. Trust uses immutable repository IDs and strict semantic
+version tags. Both can push to the MoviesTracker Artifact Registry repository;
+their exact Cloud Run and service-account permissions are attached in `prod/`.
+Neither can change infrastructure, IAM, secrets, databases, monitoring,
 schedulers, APIs, or OpenTofu state. Never add application service accounts to
 the state bucket.

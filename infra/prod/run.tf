@@ -67,7 +67,7 @@ resource "google_cloud_run_v2_service" "imdb" {
 
   depends_on = [
     google_project_service.required,
-    google_service_account_iam_member.github_act_as,
+    google_service_account_iam_member.github_backend_act_as,
   ]
 }
 
@@ -139,7 +139,7 @@ resource "google_cloud_run_v2_job" "catalog" {
 
   depends_on = [
     google_project_service.required,
-    google_service_account_iam_member.github_act_as,
+    google_service_account_iam_member.github_backend_act_as,
   ]
 }
 
@@ -186,7 +186,7 @@ resource "google_cloud_run_v2_job" "imdb_downloader" {
 
   depends_on = [
     google_project_service.required,
-    google_service_account_iam_member.github_act_as,
+    google_service_account_iam_member.github_backend_act_as,
   ]
 }
 
@@ -213,7 +213,7 @@ resource "google_cloud_run_v2_job_iam_member" "github_catalog_invoker" {
   location = var.region
   name     = each.value.name
   role     = "roles/run.invoker"
-  member   = "serviceAccount:movies-github-deployer@${var.project_id}.iam.gserviceaccount.com"
+  member   = "serviceAccount:movies-backend-deployer@${var.project_id}.iam.gserviceaccount.com"
 }
 
 resource "google_cloud_run_v2_job_iam_member" "github_imdb_invoker" {
@@ -221,5 +221,38 @@ resource "google_cloud_run_v2_job_iam_member" "github_imdb_invoker" {
   location = var.region
   name     = google_cloud_run_v2_job.imdb_downloader.name
   role     = "roles/run.invoker"
-  member   = "serviceAccount:movies-github-deployer@${var.project_id}.iam.gserviceaccount.com"
+  member   = "serviceAccount:movies-backend-deployer@${var.project_id}.iam.gserviceaccount.com"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "github_backend_developer" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.imdb.name
+  role     = "roles/run.developer"
+  member   = "serviceAccount:movies-backend-deployer@${var.project_id}.iam.gserviceaccount.com"
+}
+
+resource "google_cloud_run_v2_job_iam_member" "github_catalog_developer" {
+  for_each = google_cloud_run_v2_job.catalog
+  project  = var.project_id
+  location = var.region
+  name     = each.value.name
+  role     = "roles/run.developer"
+  member   = "serviceAccount:movies-backend-deployer@${var.project_id}.iam.gserviceaccount.com"
+}
+
+resource "google_cloud_run_v2_job_iam_member" "github_imdb_developer" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_job.imdb_downloader.name
+  role     = "roles/run.developer"
+  member   = "serviceAccount:movies-backend-deployer@${var.project_id}.iam.gserviceaccount.com"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "github_frontend_developer" {
+  project  = var.project_id
+  location = var.region
+  name     = "moviestracker-app"
+  role     = "roles/run.developer"
+  member   = "serviceAccount:movies-frontend-deployer@${var.project_id}.iam.gserviceaccount.com"
 }
