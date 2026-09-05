@@ -67,7 +67,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "google.subject"          = "assertion.sub"
     "attribute.repository_id" = "assertion.repository_id"
   }
-  attribute_condition = "assertion.repository_id in ['${var.backend_repository_id}', '${var.frontend_repository_id}'] && assertion.ref.matches('^refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+$')"
+  attribute_condition = "assertion.repository_id in ['${var.backend_repository_id}', '${var.frontend_repository_id}'] && assertion.ref.matches('^refs/tags/v[0-9]+[.][0-9]+[.][0-9]+$')"
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
   }
