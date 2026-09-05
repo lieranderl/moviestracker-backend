@@ -19,6 +19,7 @@ env:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
@@ -33,12 +34,18 @@ jobs:
   build:
     needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
         app: [getmovies, getimdbrating, downloadimdbdata]
     permissions:
       attestations: write
-      contents: read
+      # anchore/sbom-action attaches the SPDX document as a release asset when the
+      # workflow is triggered by a release, which requires write access to
+      # contents. Without it the step fails with "Resource not accessible by
+      # integration" and the whole release is cancelled before deploy.
+      contents: write
       id-token: write
       packages: write
     steps:
@@ -60,6 +67,8 @@ jobs:
           platforms: linux/amd64
           load: true
           push: false
+          cache-from: type=gha,scope=release-${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.app }}
           tags: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT }}/${{ env.GAR_REPOSITORY }}/${{ matrix.app }}:release-${{ github.event.release.tag_name }}
       - uses: aquasecurity/trivy-action@v0.36.0
         with:
