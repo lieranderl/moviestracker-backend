@@ -7,7 +7,7 @@ GOCACHE ?= $(CACHE_DIR)/go-build
 GOMODCACHE ?= $(CACHE_DIR)/go-mod
 GOENV := GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE)
 GOLANGCI_LINT_CACHE ?= $(CACHE_DIR)/golangci-lint
-COVERAGE_THRESHOLD ?= 50
+COVERAGE_THRESHOLD ?= 65
 
 .PHONY: fmt tidy test race cover build vet lint vuln verify clean
 
