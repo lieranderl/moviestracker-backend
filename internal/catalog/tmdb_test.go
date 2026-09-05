@@ -1,0 +1,81 @@
+package catalog
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestTMDBClientEnrichesMatchingMovie(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		require.Equal(t, "/search/movie", r.URL.Path)
+		require.Equal(t, "secret", r.URL.Query().Get("api_key"))
+		require.Equal(t, "Bad Boys", r.URL.Query().Get("query"))
+		return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(strings.NewReader(`{"results":[{"id":9737,"title":"Плохие парни","original_title":"Bad Boys","release_date":"1995-04-07","backdrop_path":"/b.jpg","poster_path":"/p.jpg","genre_ids":[28,35],"vote_average":6.8,"vote_count":6200}]}`))}, nil
+	})}
+
+	tmdb := NewTMDBClient(client, "https://tmdb.test", "secret")
+	got, err := tmdb.Enrich(context.Background(), Movie{SearchName: "Bad Boys", Year: "1995"})
+
+	require.NoError(t, err)
+	require.Equal(t, "9737", got.ID)
+	require.Equal(t, "Bad Boys", got.OriginalTitle)
+	require.Equal(t, "6.8", got.VoteAverage)
+}
+
+func TestTMDBClientRetriesRateLimit(t *testing.T) {
+	var attempts atomic.Int32
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		if attempts.Add(1) == 1 {
+			return &http.Response{
+				StatusCode: http.StatusTooManyRequests,
+				Status:     "429 Too Many Requests",
+				Header:     http.Header{"Retry-After": []string{"0"}},
+				Body:       io.NopCloser(strings.NewReader("rate limited")),
+			}, nil
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(strings.NewReader(`{"results":[]}`)),
+		}, nil
+	})}
+
+	_, err := NewTMDBClient(client, "https://tmdb.test", "secret").Enrich(context.Background(), Movie{SearchName: "Bad Boys"})
+
+	require.NoError(t, err)
+	require.EqualValues(t, 2, attempts.Load())
+}
+
+func TestTMDBClientCancelsRateLimitWait(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		cancel()
+		return &http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Status:     "429 Too Many Requests",
+			Header:     http.Header{"Retry-After": []string{"60"}},
+			Body:       io.NopCloser(strings.NewReader("rate limited")),
+		}, nil
+	})}
+
+	_, err := NewTMDBClient(client, "https://tmdb.test", "secret").Enrich(ctx, Movie{SearchName: "Bad Boys"})
+
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestTMDBClientLeavesNonMatchingResultUnenriched(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(strings.NewReader(`{"results":[{"id":1,"title":"Different","original_title":"Different","release_date":"2024-01-01"}]}`))}, nil
+	})}
+
+	got, err := NewTMDBClient(client, "https://tmdb.test", "secret").Enrich(context.Background(), Movie{SearchName: "Bad Boys", Year: "1995"})
+
+	require.NoError(t, err)
+	require.Empty(t, got.ID)
+}

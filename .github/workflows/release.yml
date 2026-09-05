@@ -1,0 +1,177 @@
+name: Release backend
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-production
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: moviestracker-f07e2
+  GCP_REGION: europe-west1
+  GAR_REPOSITORY: moviestracker
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [getmovies, getimdbrating, downloadimdbdata]
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_ID_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+      - uses: docker/setup-buildx-action@v3
+      - name: Build candidate
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          build-args: APP=${{ matrix.app }}
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT }}/${{ env.GAR_REPOSITORY }}/${{ matrix.app }}:release-${{ github.event.release.tag_name }}
+      - uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT }}/${{ env.GAR_REPOSITORY }}/${{ matrix.app }}:release-${{ github.event.release.tag_name }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+      - name: Push scanned candidate
+        id: push
+        run: |
+          image="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/${GAR_REPOSITORY}/${{ matrix.app }}:release-${{ github.event.release.tag_name }}"
+          docker push "$image"
+          digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' | cut -d@ -f2)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - uses: anchore/sbom-action@v0.20.6
+        with:
+          image: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT }}/${{ env.GAR_REPOSITORY }}/${{ matrix.app }}@${{ steps.push.outputs.digest }}
+          artifact-name: ${{ matrix.app }}-${{ github.event.release.tag_name }}.spdx.json
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT }}/${{ env.GAR_REPOSITORY }}/${{ matrix.app }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+      - name: Save immutable image
+        run: echo "${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/${GAR_REPOSITORY}/${{ matrix.app }}@${{ steps.push.outputs.digest }}" > "${{ matrix.app }}.digest"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.app }}
+          path: ${{ matrix.app }}.digest
+
+  plan:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TF_VAR_rutor_urls: ${{ secrets.RUTOR_URLS_JSON }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: digest-*
+          merge-multiple: true
+      - name: Assemble image variables
+        run: |
+          jq -n \
+            --arg getmovies "$(cat getmovies.digest)" \
+            --arg getimdbrating "$(cat getimdbrating.digest)" \
+            --arg downloadimdbdata "$(cat downloadimdbdata.digest)" \
+            '{getmovies:$getmovies,getimdbrating:$getimdbrating,downloadimdbdata:$downloadimdbdata}' > images.json
+          echo "TF_VAR_images=$(jq -c . images.json)" >> "$GITHUB_ENV"
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_ID_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.12.6
+      - run: tofu -chdir=infra/prod init -input=false
+      - run: tofu -chdir=infra/prod plan -input=false -out=production.tfplan
+      - run: tofu -chdir=infra/prod show -no-color production.tfplan > production-plan.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reviewed-production-plan
+          path: |
+            infra/prod/production.tfplan
+            production-plan.txt
+          retention-days: 2
+
+  apply:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/download-artifact@v5
+        with:
+          name: reviewed-production-plan
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_ID_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.12.6
+      - run: tofu -chdir=infra/prod init -input=false
+      - name: Capture current serving revision
+        id: previous
+        run: |
+          revision=$(gcloud run services describe get-imdb-rating-service --project="$GCP_PROJECT" --region="$GCP_REGION" --format=json | jq -r '[.status.traffic[] | select((.percent // 0) > 0)][0].revisionName')
+          test -n "$revision" && test "$revision" != "null"
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+      - name: Apply exact reviewed plan
+        run: tofu -chdir=infra/prod apply -input=false production.tfplan
+      - name: Run fresh-data jobs
+        run: |
+          gcloud run jobs execute getmovies-latesttorrentsmovies-job --project="$GCP_PROJECT" --region="$GCP_REGION" --wait
+          gcloud run jobs execute getmovies-hdr10movies-job --project="$GCP_PROJECT" --region="$GCP_REGION" --wait
+          gcloud run jobs execute getmovies-dvmovies-job --project="$GCP_PROJECT" --region="$GCP_REGION" --wait
+          gcloud run jobs execute downloadimdbdata-job --project="$GCP_PROJECT" --region="$GCP_REGION" --wait
+      - name: Smoke IMDb gateway
+        env:
+          API_GATEWAY_URL: ${{ vars.API_GATEWAY_URL }}
+          API_KEY: ${{ secrets.GC_API_KEY }}
+        run: curl --fail --show-error --silent "${API_GATEWAY_URL}/getimdb?imdb_id=tt0133093&key=${API_KEY}" | jq -e '.Id == "tt0133093"'
+      - name: Roll back IMDb traffic on failure
+        if: failure() && steps.previous.outputs.revision != ''
+        run: gcloud run services update-traffic get-imdb-rating-service --project="$GCP_PROJECT" --region="$GCP_REGION" --to-revisions="${{ steps.previous.outputs.revision }}=100" --quiet

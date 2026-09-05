@@ -1,0 +1,87 @@
+resource "google_storage_bucket" "tofu_state" {
+  name                        = var.state_bucket_name
+  location                    = var.region
+  project                     = var.project_id
+  force_destroy               = false
+  public_access_prevention    = "enforced"
+  uniform_bucket_level_access = true
+
+  versioning {
+    enabled = true
+  }
+
+  lifecycle_rule {
+    condition {
+      age        = 30
+      with_state = "ARCHIVED"
+    }
+    action {
+      type = "Delete"
+    }
+  }
+}
+
+resource "google_service_account" "github_deployer" {
+  project      = var.project_id
+  account_id   = "movies-github-deployer"
+  display_name = "MoviesTracker GitHub release deployer"
+}
+
+resource "google_storage_bucket_iam_member" "github_state" {
+  bucket = google_storage_bucket.tofu_state.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.github_deployer.email}"
+}
+
+resource "google_project_iam_member" "github_roles" {
+  for_each = toset([
+    "roles/artifactregistry.writer",
+    "roles/iam.securityReviewer",
+    "roles/run.admin",
+    "roles/serviceusage.serviceUsageViewer",
+    "roles/viewer",
+  ])
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.github_deployer.email}"
+}
+
+resource "google_iam_workload_identity_pool" "github" {
+  project                   = var.project_id
+  workload_identity_pool_id = "moviestracker-github"
+  display_name              = "MoviesTracker GitHub"
+}
+
+resource "google_iam_workload_identity_pool_provider" "github" {
+  project                            = var.project_id
+  workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
+  workload_identity_pool_provider_id = "github-oidc"
+  display_name                       = "GitHub Actions OIDC"
+  attribute_mapping = {
+    "google.subject"       = "assertion.sub"
+    "attribute.repository" = "assertion.repository"
+  }
+  attribute_condition = "assertion.repository in [${join(", ", [for repository in var.github_repositories : "'${repository}'"])}] && assertion.ref_type == 'tag'"
+  oidc {
+    issuer_uri = "https://token.actions.githubusercontent.com"
+  }
+}
+
+resource "google_service_account_iam_member" "github_wif" {
+  for_each           = var.github_repositories
+  service_account_id = google_service_account.github_deployer.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${each.value}"
+}
+
+output "state_bucket" {
+  value = google_storage_bucket.tofu_state.name
+}
+
+output "github_workload_identity_provider" {
+  value = google_iam_workload_identity_pool_provider.github.name
+}
+
+output "github_deployer_service_account" {
+  value = google_service_account.github_deployer.email
+}
