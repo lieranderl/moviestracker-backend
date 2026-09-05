@@ -62,7 +62,11 @@ resource "google_cloud_run_v2_service" "imdb" {
   }
 
   lifecycle {
-    ignore_changes = [template[0].containers[0].image]
+    ignore_changes = [
+      client,
+      client_version,
+      template[0].containers[0].image,
+    ]
   }
 
   depends_on = [
@@ -134,7 +138,11 @@ resource "google_cloud_run_v2_job" "catalog" {
 
 
   lifecycle {
-    ignore_changes = [template[0].template[0].containers[0].image]
+    ignore_changes = [
+      client,
+      client_version,
+      template[0].template[0].containers[0].image,
+    ]
   }
 
   depends_on = [
@@ -181,7 +189,11 @@ resource "google_cloud_run_v2_job" "imdb_downloader" {
   }
 
   lifecycle {
-    ignore_changes = [template[0].template[0].containers[0].image]
+    ignore_changes = [
+      client,
+      client_version,
+      template[0].template[0].containers[0].image,
+    ]
   }
 
   depends_on = [

@@ -93,7 +93,7 @@ resource "google_monitoring_alert_policy" "catalog_stale" {
     display_name = "No successful catalog job within 24 hours"
     condition_absent {
       filter   = "resource.type = \"cloud_run_job\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.catalog_success.name}\""
-      duration = "86400s"
+      duration = "82800s"
       aggregations {
         alignment_period     = "3600s"
         per_series_aligner   = "ALIGN_SUM"
@@ -113,7 +113,7 @@ resource "google_monitoring_alert_policy" "imdb_stale" {
     display_name = "No successful IMDb download within 24 hours"
     condition_absent {
       filter   = "resource.type = \"cloud_run_job\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.imdb_download_success.name}\""
-      duration = "86400s"
+      duration = "82800s"
     }
   }
 }
