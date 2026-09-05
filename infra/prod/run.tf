@@ -191,10 +191,10 @@ resource "google_cloud_run_v2_job" "imdb_downloader" {
 }
 
 resource "google_cloud_run_v2_job_iam_member" "scheduler_catalog_invoker" {
-  for_each = google_cloud_run_v2_job.catalog
+  for_each = local.catalog_jobs
   project  = var.project_id
   location = var.region
-  name     = each.value.name
+  name     = google_cloud_run_v2_job.catalog[each.key].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.scheduler.email}"
 }
@@ -208,10 +208,10 @@ resource "google_cloud_run_v2_job_iam_member" "scheduler_imdb_invoker" {
 }
 
 resource "google_cloud_run_v2_job_iam_member" "github_catalog_invoker" {
-  for_each = google_cloud_run_v2_job.catalog
+  for_each = local.catalog_jobs
   project  = var.project_id
   location = var.region
-  name     = each.value.name
+  name     = google_cloud_run_v2_job.catalog[each.key].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:movies-backend-deployer@${var.project_id}.iam.gserviceaccount.com"
 }
@@ -233,10 +233,10 @@ resource "google_cloud_run_v2_service_iam_member" "github_backend_developer" {
 }
 
 resource "google_cloud_run_v2_job_iam_member" "github_catalog_developer" {
-  for_each = google_cloud_run_v2_job.catalog
+  for_each = local.catalog_jobs
   project  = var.project_id
   location = var.region
-  name     = each.value.name
+  name     = google_cloud_run_v2_job.catalog[each.key].name
   role     = "roles/run.developer"
   member   = "serviceAccount:movies-backend-deployer@${var.project_id}.iam.gserviceaccount.com"
 }
