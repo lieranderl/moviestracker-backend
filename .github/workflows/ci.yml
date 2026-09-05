@@ -31,7 +31,7 @@ jobs:
       - name: Coverage threshold
         run: |
           total=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub(/%/, "", $3); print $3}')
-          awk -v total="$total" 'BEGIN { exit(total < 50) }'
+          awk -v total="$total" 'BEGIN { exit(total < 65) }'
       - name: Race tests
         run: go test -race ./...
       - name: Vet

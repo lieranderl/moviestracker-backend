@@ -61,10 +61,21 @@ func run(parent context.Context, args []string, getenv func(string) string) erro
 		Enricher:   catalog.NewTMDBClient(httpClient, strings.TrimSpace(getenv("TMDB_BASE_URL")), config.tmdbAPIKey),
 		Repository: firestorestore.New(client),
 	}
-	if err := runner.Run(ctx, catalog.RunConfig{Collection: config.collection, URLs: config.urls}); err != nil {
+	result, err := runner.Run(ctx, catalog.RunConfig{Collection: config.collection, URLs: config.urls})
+	if err != nil {
 		return fmt.Errorf("run catalog pipeline: %w", err)
 	}
-	slog.Info("catalog job completed", "collection", config.collection)
+	// "catalog job completed" is matched by the log-based metric in
+	// infra/prod/monitoring.tf; do not reword it without updating that filter.
+	slog.Info("catalog job completed",
+		"collection", config.collection,
+		"torrents", result.Torrents,
+		"grouped", result.Grouped,
+		"enriched", result.Enriched,
+		"stored", result.Stored,
+		"sources_failed", result.SourcesFailed,
+		"enrich_failed", result.EnrichFailed,
+	)
 	return nil
 }
 

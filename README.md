@@ -35,6 +35,10 @@ Tracked but not yet fixed, so the README does not overstate the current state:
   across a refresh, against a 512 MiB Cloud Run limit. The service still
   requests 512 MiB, so there is room to lower it once real usage is observed;
   that needs an OpenTofu apply.
+- A catalog run that is partially degraded still logs "catalog job completed",
+  so the existing alerts cannot distinguish it from a clean run. The counts are
+  in the log line; a log-based metric on `enrich_failed` and `sources_failed`
+  would close this, and needs an OpenTofu apply.
 - `get-imdb-rating-service` runs with CPU throttled outside requests, so the
   15-minute background refresh goroutine is not reliably scheduled.
 - TMDB enrichment resolves ~85% of `latesttorrentsmovies` candidates, ~96% of

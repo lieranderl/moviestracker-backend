@@ -3,8 +3,10 @@ package catalog
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -75,7 +77,164 @@ func TestRunnerPassesCallerContextToEveryBoundary(t *testing.T) {
 	})
 	runner := Runner{Tracker: tracker}
 
-	err := runner.Run(context.Background(), RunConfig{URLs: []string{"https://tracker.example"}, Collection: CollectionLatest})
+	_, err := runner.Run(context.Background(), RunConfig{URLs: []string{"https://tracker.example"}, Collection: CollectionLatest})
 
 	require.ErrorIs(t, err, cancelled)
+}
+
+// Losing one tracker page must not discard the pages that succeeded. The DV and
+// HDR10 collections scrape five and four pages respectively.
+func TestRunnerKeepsWorkingTrackerSourcesWhenOneFails(t *testing.T) {
+	tracker := TrackerFunc(func(_ context.Context, url string, _ bool) ([]Torrent, error) {
+		if url == "https://broken.test" {
+			return nil, errors.New("502 bad gateway")
+		}
+		return []Torrent{{Hash: url, OriginalName: "Movie " + url, Year: "2024"}}, nil
+	})
+	repository := &recordingRepository{}
+	runner := Runner{Tracker: tracker, Repository: repository}
+
+	result, err := runner.Run(context.Background(), RunConfig{
+		Collection: CollectionDV,
+		URLs:       []string{"https://one.test", "https://broken.test", "https://two.test"},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.SourcesFailed)
+	require.Equal(t, 2, result.Torrents)
+	require.Equal(t, 2, result.Grouped)
+	require.Len(t, repository.saved, 2)
+}
+
+func TestRunnerFailsWhenEveryTrackerSourceFails(t *testing.T) {
+	tracker := TrackerFunc(func(context.Context, string, bool) ([]Torrent, error) {
+		return nil, errors.New("dns failure")
+	})
+	repository := &recordingRepository{}
+	runner := Runner{Tracker: tracker, Repository: repository}
+
+	_, err := runner.Run(context.Background(), RunConfig{
+		Collection: CollectionDV,
+		URLs:       []string{"https://one.test", "https://two.test"},
+	})
+
+	require.ErrorContains(t, err, "every tracker source failed")
+	require.Nil(t, repository.saved, "nothing may be written when the whole scrape failed")
+}
+
+// A transient enrichment error must cost one title, not the whole run.
+func TestRunnerPersistsMoviesThatEnrichedWhenSomeFail(t *testing.T) {
+	tracker := TrackerFunc(func(context.Context, string, bool) ([]Torrent, error) {
+		torrents := make([]Torrent, 0, 10)
+		for index := range 10 {
+			name := fmt.Sprintf("Movie %d", index)
+			torrents = append(torrents, Torrent{Hash: name, OriginalName: name, Year: "2024"})
+		}
+		return torrents, nil
+	})
+	enricher := enricherFunc(func(_ context.Context, movie Movie) (Movie, error) {
+		if movie.SearchName == "Movie 3" {
+			return movie, errors.New("tmdb timeout")
+		}
+		movie.ID = movie.SearchName
+		return movie, nil
+	})
+	repository := &recordingRepository{}
+	runner := Runner{Tracker: tracker, Enricher: enricher, Repository: repository}
+
+	result, err := runner.Run(context.Background(), RunConfig{Collection: CollectionLatest, URLs: []string{"https://one.test"}})
+
+	require.NoError(t, err)
+	require.Equal(t, 10, result.Grouped)
+	require.Equal(t, 9, result.Enriched)
+	require.Equal(t, 1, result.EnrichFailed)
+	require.Len(t, repository.saved, 9)
+	for _, movie := range repository.saved {
+		require.NotEqual(t, "Movie 3", movie.SearchName)
+	}
+}
+
+// A rejected API key or a TMDB outage fails nearly everything. That must fail
+// loudly instead of quietly replacing the catalog with a near-empty one.
+func TestRunnerFailsWhenMostEnrichmentFails(t *testing.T) {
+	tracker := TrackerFunc(func(context.Context, string, bool) ([]Torrent, error) {
+		torrents := make([]Torrent, 0, 10)
+		for index := range 10 {
+			name := fmt.Sprintf("Movie %d", index)
+			torrents = append(torrents, Torrent{Hash: name, OriginalName: name, Year: "2024"})
+		}
+		return torrents, nil
+	})
+	enricher := enricherFunc(func(_ context.Context, movie Movie) (Movie, error) {
+		return movie, errors.New("401 invalid api key")
+	})
+	repository := &recordingRepository{}
+	runner := Runner{Tracker: tracker, Enricher: enricher, Repository: repository}
+
+	_, err := runner.Run(context.Background(), RunConfig{Collection: CollectionLatest, URLs: []string{"https://one.test"}})
+
+	require.ErrorContains(t, err, "enrichment failed for 10 of 10 movies")
+	require.ErrorContains(t, err, "401 invalid api key")
+	require.Nil(t, repository.saved)
+}
+
+// Movies TMDB simply does not know are not failures; they are dropped quietly,
+// as before, because Firestore documents are keyed on the TMDB id.
+func TestRunnerDropsUnresolvedMoviesWithoutFailing(t *testing.T) {
+	tracker := TrackerFunc(func(context.Context, string, bool) ([]Torrent, error) {
+		return []Torrent{
+			{Hash: "a", OriginalName: "Known", Year: "2024"},
+			{Hash: "b", OriginalName: "Unknown", Year: "2024"},
+		}, nil
+	})
+	enricher := enricherFunc(func(_ context.Context, movie Movie) (Movie, error) {
+		if movie.SearchName == "Known" {
+			movie.ID = "42"
+		}
+		return movie, nil
+	})
+	repository := &recordingRepository{}
+	runner := Runner{Tracker: tracker, Enricher: enricher, Repository: repository}
+
+	result, err := runner.Run(context.Background(), RunConfig{Collection: CollectionLatest, URLs: []string{"https://one.test"}})
+
+	require.NoError(t, err)
+	require.Equal(t, 0, result.EnrichFailed)
+	require.Equal(t, 1, result.Enriched)
+	require.Len(t, repository.saved, 1)
+	require.Equal(t, "42", repository.saved[0].ID)
+}
+
+func TestRunnerReportsCancellationRatherThanPartialSuccess(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	tracker := TrackerFunc(func(context.Context, string, bool) ([]Torrent, error) {
+		return []Torrent{{Hash: "a", OriginalName: "Movie", Year: "2024"}}, nil
+	})
+	enricher := enricherFunc(func(_ context.Context, movie Movie) (Movie, error) {
+		cancel()
+		return movie, context.Canceled
+	})
+	repository := &recordingRepository{}
+	runner := Runner{Tracker: tracker, Enricher: enricher, Repository: repository}
+
+	_, err := runner.Run(ctx, RunConfig{Collection: CollectionLatest, URLs: []string{"https://one.test"}})
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.Nil(t, repository.saved)
+}
+
+type enricherFunc func(context.Context, Movie) (Movie, error)
+
+func (f enricherFunc) Enrich(ctx context.Context, movie Movie) (Movie, error) { return f(ctx, movie) }
+
+type recordingRepository struct {
+	mu    sync.Mutex
+	saved []Movie
+}
+
+func (r *recordingRepository) Upsert(_ context.Context, _ Collection, movies []Movie) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.saved = append(r.saved, movies...)
+	return nil
 }

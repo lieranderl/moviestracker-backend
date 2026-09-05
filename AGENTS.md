@@ -110,7 +110,7 @@ Run before declaring work complete:
 make test race cover vet lint vuln build
 ```
 
-- `make cover` enforces a threshold (`COVERAGE_THRESHOLD`, currently 50).
+- `make cover` enforces a threshold (`COVERAGE_THRESHOLD`, currently 65).
 - Tests are deterministic and offline. No test may reach Rutor, TMDB, IMDb,
   Firestore, or Cloud Storage. Emulator-backed tests must skip when the
   emulator is absent.
@@ -145,11 +145,16 @@ make test race cover vet lint vuln build
 
 ## Working style
 
+- A catalog run degrades rather than aborting: a failed tracker page or a failed
+  TMDB lookup costs that item, and the run only fails if every source failed or
+  more than `maxFailureRatio` of lookups failed (`internal/catalog/runner.go`).
+  Do not reintroduce `errgroup.WithContext` there; cancelling siblings on the
+  first error is what previously turned one bad page into a lost run.
 - This repo has known open defects that are documented but not yet fixed
-  (IMDb refresh under `cpu_idle`, all-or-nothing catalog enrichment, GitHub
-  attestations and reviewer gate unavailable on this plan). Do not silently
-  "fix" adjacent code while doing an unrelated task; keep changes scoped and
-  mention what you noticed.
+  (IMDb refresh under `cpu_idle`, no alert on a partially degraded catalog run,
+  GitHub attestations and reviewer gate unavailable on this plan). Do not
+  silently "fix" adjacent code while doing an unrelated task; keep changes
+  scoped and mention what you noticed.
 - Prefer the standard library. The dependency set is deliberately small:
   Firestore, Cloud Storage, goquery, `golang.org/x/sync`, testify. Ask before
   adding a direct dependency.
