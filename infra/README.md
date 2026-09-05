@@ -1,7 +1,9 @@
 # Production infrastructure
 
 `bootstrap/` creates the private, regional, versioned state bucket plus the
-release-tag-only GitHub OIDC trust. `prod/` manages the existing Firestore
+release-tag-only GitHub OIDC trust. The release identity can push images and
+update/run Cloud Run workloads, but cannot change infrastructure, IAM, secrets,
+databases, or state. `prod/` manages the existing Firestore
 database, IMDb bucket, Artifact Registry repository, API Gateway, one service,
 four jobs/schedules, least-privilege runtime identities, and alerts.
 
@@ -30,9 +32,10 @@ four jobs/schedules, least-privilege runtime identities, and alerts.
    `retire_frontend_legacy_resources=false`, then review a plan with
    `retire_frontend_legacy_resources=true` before deleting them.
 
-No 14-day parallel stack is retained. Release safety comes from protected plan
-approval, immutable digests, fresh-data jobs, smoke tests, and immediate Cloud
-Run traffic rollback if the release fails.
+No 14-day parallel stack is retained. Infrastructure changes use exact reviewed
+OpenTofu plan artifacts under a platform administrator identity. Release safety
+comes from immutable digests, fresh-data jobs, smoke tests, and automatic image
+rollback if the release fails.
 
 ## Cost controls
 
