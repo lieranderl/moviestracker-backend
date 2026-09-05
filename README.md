@@ -14,7 +14,8 @@ torrent search.
 
 - Go 1.26.8, context-aware `net/http`, goquery
 - Firestore Native database `moviestracker` in `europe-west1`
-- Cloud Storage generation-aware immutable IMDb index, refreshed every 15 min
+- Cloud Storage generation-aware immutable IMDb index, streamed and refreshed
+  without buffering the decompressed export
 - Cloud Run service/jobs with dedicated identities and scale-to-zero defaults
 - OpenTofu 1.12.6 and Google providers 7.42.0
 - GitHub release workflow with OIDC, image scans, SBOMs, digest deployments,
@@ -30,8 +31,10 @@ Tracked but not yet fixed, so the README does not overstate the current state:
   current billing plan. Releases therefore carry no cryptographic provenance and
   no human approval gate. Making the repository public, or moving it into an
   organisation on a supporting plan, would enable both.
-- The IMDb ratings index peaks at ~479 MiB during refresh against a 512 MiB
-  Cloud Run limit (measured, 1.71M rows).
+- The IMDb ratings index holds ~1.71M rows in ~22 MiB and peaks at ~61 MiB
+  across a refresh, against a 512 MiB Cloud Run limit. The service still
+  requests 512 MiB, so there is room to lower it once real usage is observed;
+  that needs an OpenTofu apply.
 - `get-imdb-rating-service` runs with CPU throttled outside requests, so the
   15-minute background refresh goroutine is not reliably scheduled.
 - TMDB enrichment matches ~42% of the `latesttorrentsmovies` candidates because
