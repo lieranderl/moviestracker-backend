@@ -41,11 +41,7 @@ jobs:
         app: [getmovies, getimdbrating, downloadimdbdata]
     permissions:
       attestations: write
-      # anchore/sbom-action attaches the SPDX document as a release asset when the
-      # workflow is triggered by a release, which requires write access to
-      # contents. Without it the step fails with "Resource not accessible by
-      # integration" and the whole release is cancelled before deploy.
-      contents: write
+      contents: read
       id-token: write
       packages: write
     steps:
@@ -86,6 +82,13 @@ jobs:
         with:
           image: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT }}/${{ env.GAR_REPOSITORY }}/${{ matrix.app }}@${{ steps.push.outputs.digest }}
           artifact-name: ${{ matrix.app }}-${{ github.event.release.tag_name }}.spdx.json
+          # On a release event this action defaults to also attaching the SPDX
+          # document as a release asset, which fails here with "Resource not
+          # accessible by integration" even when the job token carries
+          # contents: write. Three concurrent matrix jobs mutating one release
+          # is racy regardless, so the SBOM is retained as a build artifact
+          # instead and the job keeps least-privilege contents: read.
+          upload-release-assets: false
       - uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT }}/${{ env.GAR_REPOSITORY }}/${{ matrix.app }}
