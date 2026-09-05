@@ -116,7 +116,7 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_ID_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
-      - uses: opentofu/setup-opentofu@v1
+      - uses: opentofu/setup-opentofu@v2.0.2
         with:
           tofu_version: 1.12.6
       - run: tofu -chdir=infra/prod init -input=false
@@ -149,7 +149,7 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_ID_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
-      - uses: opentofu/setup-opentofu@v1
+      - uses: opentofu/setup-opentofu@v2.0.2
         with:
           tofu_version: 1.12.6
       - run: tofu -chdir=infra/prod init -input=false
