@@ -76,16 +76,24 @@ func (c *TMDBClient) Enrich(ctx context.Context, movie Movie) (Movie, error) {
 	if len(payload.Results) == 0 {
 		return movie, nil
 	}
-	result := payload.Results[0]
-	releaseYear := ""
-	if len(result.ReleaseDate) >= 4 {
-		releaseYear = result.ReleaseDate[:4]
+
+	// Every result is considered, not just the first. TMDB routinely ranks a
+	// same-titled release from an adjacent year above the intended one.
+	candidates := make([]Candidate, 0, len(payload.Results))
+	for index, result := range payload.Results {
+		candidates = append(candidates, Candidate{
+			OriginalTitle: result.OriginalTitle,
+			Rank:          index,
+			ReleaseYear:   releaseYear(result.ReleaseDate),
+			Title:         result.Title,
+			VoteCount:     result.VoteCount,
+		})
 	}
-	sameTitle := strings.EqualFold(strings.TrimSpace(movie.SearchName), strings.TrimSpace(result.OriginalTitle)) || strings.EqualFold(strings.TrimSpace(movie.SearchName), strings.TrimSpace(result.Title))
-	sameYear := movie.Year == "" || releaseYear == "" || movie.Year == releaseYear
-	if !sameTitle || !sameYear {
+	selected := SelectCandidate(movie.SearchName, movie.Year, candidates)
+	if selected < 0 {
 		return movie, nil
 	}
+	result := payload.Results[selected]
 
 	movie.BackdropPath = result.BackdropPath
 	movie.GenreIDs = result.GenreIDs
@@ -97,6 +105,13 @@ func (c *TMDBClient) Enrich(ctx context.Context, movie Movie) (Movie, error) {
 	movie.VoteAverage = strconv.FormatFloat(result.VoteAverage, 'f', 1, 64)
 	movie.VoteCount = strconv.FormatInt(result.VoteCount, 10)
 	return movie, nil
+}
+
+func releaseYear(releaseDate string) string {
+	if len(releaseDate) < 4 {
+		return ""
+	}
+	return releaseDate[:4]
 }
 
 func (c *TMDBClient) doWithRetry(ctx context.Context, req *http.Request) (*http.Response, error) {

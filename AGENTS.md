@@ -30,6 +30,14 @@ infra/prod             all production resources (GCS-backed state)
   Firebase Auth / Identity Platform is the frontend's concern, not this repo's.
 - Rutor is the only catalog source. Kinozal, Colly, and `GetTorrentsForMovie`
   are removed; the frontend uses JacRed for torrent search.
+- TMDB enrichment scores **every** search result and takes the best above a
+  confidence floor (`internal/catalog/match.go`). Never reduce this to
+  `Results[0]` with exact title and year equality: that measured 42% on
+  `latesttorrentsmovies`. Tracker years drift by one against TMDB release dates,
+  titles differ by punctuation and abbreviation, and a film's canonical title is
+  often in a third language. The `confidenceWeak` tier deliberately trusts TMDB's
+  top-ranked result on an exact year, because TMDB has already matched the query
+  against alternative titles that its response does not expose.
 
 ## Locked external contracts
 
@@ -138,10 +146,10 @@ make test race cover vet lint vuln build
 ## Working style
 
 - This repo has known open defects that are documented but not yet fixed
-  (TMDB match rate, IMDb refresh under `cpu_idle`, GitHub attestations and
-  reviewer gate unavailable on this plan). Do not silently "fix" adjacent code
-  while doing an unrelated task; keep changes scoped and mention what you
-  noticed.
+  (IMDb refresh under `cpu_idle`, all-or-nothing catalog enrichment, GitHub
+  attestations and reviewer gate unavailable on this plan). Do not silently
+  "fix" adjacent code while doing an unrelated task; keep changes scoped and
+  mention what you noticed.
 - Prefer the standard library. The dependency set is deliberately small:
   Firestore, Cloud Storage, goquery, `golang.org/x/sync`, testify. Ask before
   adding a direct dependency.
