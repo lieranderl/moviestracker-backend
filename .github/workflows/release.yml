@@ -61,7 +61,7 @@ jobs:
           load: true
           push: false
           tags: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT }}/${{ env.GAR_REPOSITORY }}/${{ matrix.app }}:release-${{ github.event.release.tag_name }}
-      - uses: aquasecurity/trivy-action@0.33.1
+      - uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT }}/${{ env.GAR_REPOSITORY }}/${{ matrix.app }}:release-${{ github.event.release.tag_name }}
           severity: HIGH,CRITICAL
