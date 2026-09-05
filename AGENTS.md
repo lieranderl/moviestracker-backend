@@ -71,11 +71,23 @@ Do not "clean them up" without re-verifying.
 
 ## Hard resource limits (measured, not guessed)
 
-- The IMDb dataset is ~1.71M rows. The current `map[string]Rating` index costs
-  **~180 MiB resident**, and `Manager.Refresh` builds the new index while the
-  old one is live, peaking at **~479 MiB** plus a ~30 MiB decompression buffer.
-  The Cloud Run service limit is **512 MiB**. Any change that increases index
-  size or refresh overlap will OOM. Re-measure before and after such a change.
+- The IMDb dataset is ~1.71M rows. The index stores each row as a 12-byte
+  `entry` (`uint32` id, `uint32` votes, `uint8` rating scaled by ten) in one
+  sorted slice, costing **~22 MiB resident**. `Manager.Refresh` builds the
+  replacement while the outgoing index still serves, peaking at **~61 MiB** in a
+  512 MiB container. `TestIndexMemoryBudget` fails the build above 40 MiB for a
+  single index; do not raise that budget to make a change fit.
+- The compact encoding is only valid because the published data is regular:
+  identifiers fit `uint32` (max observed `tt45115568`), ratings always carry
+  exactly one decimal, and votes fit `uint32` (max observed 3,233,728). Rows that
+  violate this fall back to an `overflow` map so bad input costs memory rather
+  than correctness. Do not remove that fallback.
+- `Index.Lookup` accepts only IMDb's canonical zero-padded form, matching the
+  string-keyed map it replaced: `tt0133093` resolves and `tt133093` does not.
+  Relaxing this changes the frozen HTTP contract.
+- The ratings snapshot is **streamed** from Cloud Storage through gzip into the
+  parser. Do not reintroduce an `io.ReadAll` of the decompressed export; that
+  alone previously cost ~30 MiB per refresh.
 - `get-imdb-rating-service` runs with `cpu_idle = true` (CPU only during
   requests) and `min_instance_count = 0`. Background goroutines such as the
   refresh ticker are therefore **not reliably scheduled** in production. Do not
@@ -126,9 +138,10 @@ make test race cover vet lint vuln build
 ## Working style
 
 - This repo has known open defects that are documented but not yet fixed
-  (TMDB match rate, release SBOM permissions, IMDb refresh under `cpu_idle`).
-  Do not silently "fix" adjacent code while doing an unrelated task; keep
-  changes scoped and mention what you noticed.
+  (TMDB match rate, IMDb refresh under `cpu_idle`, GitHub attestations and
+  reviewer gate unavailable on this plan). Do not silently "fix" adjacent code
+  while doing an unrelated task; keep changes scoped and mention what you
+  noticed.
 - Prefer the standard library. The dependency set is deliberately small:
   Firestore, Cloud Storage, goquery, `golang.org/x/sync`, testify. Ask before
   adding a direct dependency.

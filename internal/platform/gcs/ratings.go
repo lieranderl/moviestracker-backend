@@ -75,19 +75,32 @@ func (s RatingsSource) Open(ctx context.Context, currentGeneration int64) (imdb.
 	if err != nil {
 		return imdb.Snapshot{}, fmt.Errorf("open ratings object: %w", err)
 	}
-	defer func() { _ = reader.Close() }()
 	return decodeRatingsSnapshot(attrs.Generation, reader)
 }
 
-func decodeRatingsSnapshot(generation int64, reader io.Reader) (imdb.Snapshot, error) {
+// decodeRatingsSnapshot wraps the object stream in a gzip decoder and hands both
+// to the caller to close. The whole archive is deliberately not buffered: the
+// decompressed export is around 30 MiB and the parser consumes it as a stream.
+func decodeRatingsSnapshot(generation int64, reader io.ReadCloser) (imdb.Snapshot, error) {
 	archive, err := gzip.NewReader(reader)
 	if err != nil {
+		_ = reader.Close()
 		return imdb.Snapshot{}, fmt.Errorf("open ratings gzip: %w", err)
 	}
-	defer func() { _ = archive.Close() }()
-	data, err := io.ReadAll(archive)
-	if err != nil {
-		return imdb.Snapshot{}, fmt.Errorf("decompress ratings: %w", err)
+	return imdb.Snapshot{Generation: generation, Body: gzipReadCloser{Reader: archive, object: reader}}, nil
+}
+
+// gzipReadCloser closes the gzip decoder and the underlying object stream so a
+// refresh cannot leak an open GCS connection.
+type gzipReadCloser struct {
+	*gzip.Reader
+	object io.Closer
+}
+
+func (g gzipReadCloser) Close() error {
+	err := g.Reader.Close()
+	if objectErr := g.object.Close(); err == nil {
+		err = objectErr
 	}
-	return imdb.Snapshot{Generation: generation, Reader: bytes.NewReader(data)}, nil
+	return err
 }
