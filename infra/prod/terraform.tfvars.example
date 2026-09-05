@@ -1,0 +1,11 @@
+images = {
+  getmovies        = "europe-west1-docker.pkg.dev/moviestracker-f07e2/moviestracker/getmovies@sha256:replace"
+  getimdbrating    = "europe-west1-docker.pkg.dev/moviestracker-f07e2/moviestracker/getimdbrating@sha256:replace"
+  downloadimdbdata = "europe-west1-docker.pkg.dev/moviestracker-f07e2/moviestracker/downloadimdbdata@sha256:replace"
+}
+
+rutor_urls = {
+  latesttorrentsmovies = "https://replace"
+  hdr10movies          = "https://replace"
+  dvmovies             = "https://replace"
+}

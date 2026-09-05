@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      go-dependencies: { patterns: ["*"] }
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      container-images: { patterns: ["*"] }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      github-actions: { patterns: ["*"] }
+  - package-ecosystem: terraform
+    directory: /infra/prod
+    schedule: { interval: weekly }
+    groups:
+      tofu-providers: { patterns: ["*"] }
+  - package-ecosystem: terraform
+    directory: /infra/bootstrap
+    schedule: { interval: weekly }
+    groups:
+      tofu-bootstrap-provider: { patterns: ["*"] }

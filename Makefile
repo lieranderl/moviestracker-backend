@@ -1,142 +1,53 @@
 SHELL := /bin/sh
 
-MODULES := \
-	SERVICES/GetImdbRating \
-	SERVICES/GetTorrentsForMovie \
-	JOBS/GetMovies \
-	JOBS/DownloadImdbData
-
-COVER_DIR := .coverage
-CACHE_DIR := .cache
-GOCACHE ?= $(CURDIR)/$(CACHE_DIR)/go-build
-GOMODCACHE ?= $(CURDIR)/$(CACHE_DIR)/go-mod
+APPS := getmovies getimdbrating downloadimdbdata
+CACHE_DIR := $(CURDIR)/.cache
+COVER_DIR := $(CURDIR)/.coverage
+GOCACHE ?= $(CACHE_DIR)/go-build
+GOMODCACHE ?= $(CACHE_DIR)/go-mod
 GOENV := GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE)
-GOLANGCI_CONFIG := $(CURDIR)/.golangci.yml
-PROJECT_ID ?= moviestracker-f07e2
-REGION ?= europe-west1
-REPO ?= gcf-artifacts
-IMAGE_TAG ?= $(shell sh -c 'git rev-parse --short HEAD 2>/dev/null || echo local')-$(shell date +%Y%m%d%H%M)
-AR_BASE := $(REGION)-docker.pkg.dev/$(PROJECT_ID)/$(REPO)
+GOLANGCI_LINT_CACHE ?= $(CACHE_DIR)/golangci-lint
+COVERAGE_THRESHOLD ?= 50
 
-.PHONY: fmt test race cover build vet lint staticcheck gosec tidy push-images print-images precommit-install precommit-run clean
+.PHONY: fmt tidy test race cover build vet lint vuln verify clean
 
 fmt:
-	@echo "==> gofmt"
-	@find . -name '*.go' -not -path './.git/*' -print0 | xargs -0 gofmt -w
+	@gofmt -w cmd internal
 
 tidy:
-	@set -e; \
-	mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"; \
-	for mod in $(MODULES); do \
-		echo "==> go mod tidy $$mod"; \
-		(cd $$mod && $(GOENV) go mod tidy); \
-	done
+	@mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"
+	@$(GOENV) go mod tidy
 
 test:
-	@set -e; \
-	mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"; \
-	for mod in $(MODULES); do \
-		echo "==> go test $$mod"; \
-		(cd $$mod && $(GOENV) go test ./...); \
-	done
+	@mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"
+	@$(GOENV) go test ./...
 
 race:
-	@set -e; \
-	mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"; \
-	for mod in $(MODULES); do \
-		echo "==> go test -race $$mod"; \
-		(cd $$mod && $(GOENV) go test -race ./...); \
-	done
+	@mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"
+	@$(GOENV) go test -race ./...
 
 cover:
-	@set -e; \
-	mkdir -p $(COVER_DIR); \
-	mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"; \
-	for mod in $(MODULES); do \
-		name=$$(echo $$mod | tr '/' '-'); \
-		outfile="$(CURDIR)/$(COVER_DIR)/$$name.out"; \
-		echo "==> go test -coverprofile $$mod"; \
-		(cd $$mod && $(GOENV) go test -covermode=atomic -coverprofile="$$outfile" ./...); \
-		(cd $$mod && go tool cover -func="$$outfile" | tail -n 1); \
-	done
+	@mkdir -p "$(GOCACHE)" "$(GOMODCACHE)" "$(COVER_DIR)"
+	@$(GOENV) go test ./... -covermode=atomic -coverprofile="$(COVER_DIR)/coverage.out"
+	@total=`$(GOENV) go tool cover -func="$(COVER_DIR)/coverage.out" | awk '/^total:/ {gsub(/%/, "", $$3); print $$3}'`; \
+	awk -v total="$$total" -v minimum="$(COVERAGE_THRESHOLD)" 'BEGIN { printf "coverage: %.1f%% (minimum %.1f%%)\n", total, minimum; exit(total < minimum) }'
 
 build:
-	@set -e; \
-	mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"; \
-	for mod in $(MODULES); do \
-		echo "==> go build $$mod"; \
-		name=$$(echo $$mod | tr '/' '-'); \
-		(cd $$mod && $(GOENV) go build -o "/tmp/$$name" ./cmd/main.go); \
-	done
+	@mkdir -p "$(GOCACHE)" "$(GOMODCACHE)" "$(CURDIR)/bin"
+	@set -e; for app in $(APPS); do $(GOENV) CGO_ENABLED=0 go build -mod=readonly -trimpath -ldflags='-s -w -buildid=' -o "$(CURDIR)/bin/$$app" "./cmd/$$app"; done
 
 vet:
-	@set -e; \
-	mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"; \
-	for mod in $(MODULES); do \
-		echo "==> go vet $$mod"; \
-		(cd $$mod && $(GOENV) go vet ./...); \
-	done
+	@mkdir -p "$(GOCACHE)" "$(GOMODCACHE)"
+	@$(GOENV) go vet ./...
 
 lint:
-	@command -v golangci-lint >/dev/null 2>&1 || { echo "golangci-lint is not installed"; exit 1; }
-	@set -e; \
-	for mod in $(MODULES); do \
-		echo "==> golangci-lint $$mod"; \
-		(cd $$mod && golangci-lint run --config "$(GOLANGCI_CONFIG)" ./...); \
-	done
+	@mkdir -p "$(GOLANGCI_LINT_CACHE)"
+	@GOLANGCI_LINT_CACHE=$(GOLANGCI_LINT_CACHE) $(GOENV) golangci-lint run --config .golangci.yml ./...
 
-staticcheck:
-	@command -v staticcheck >/dev/null 2>&1 || { echo "staticcheck is not installed"; exit 1; }
-	@set -e; \
-	for mod in $(MODULES); do \
-		echo "==> staticcheck $$mod"; \
-		(cd $$mod && staticcheck ./...); \
-	done
+vuln:
+	@$(GOENV) govulncheck ./...
 
-gosec:
-	@command -v gosec >/dev/null 2>&1 || { echo "gosec is not installed"; exit 1; }
-	@set -e; \
-	for mod in $(MODULES); do \
-		echo "==> gosec $$mod"; \
-		(cd $$mod && gosec ./...); \
-	done
-
-push-images:
-	@command -v gcloud >/dev/null 2>&1 || { echo "gcloud is not installed"; exit 1; }
-	@set -e; \
-	echo "==> pushing images to $(AR_BASE) with tag $(IMAGE_TAG)"; \
-	gcloud builds submit SERVICES/GetTorrentsForMovie \
-		--tag "$(AR_BASE)/get-torrents-for-movie-service:$(IMAGE_TAG)" \
-		--region "$(REGION)"; \
-	gcloud builds submit SERVICES/GetImdbRating \
-		--tag "$(AR_BASE)/get-imdb-rating-service:$(IMAGE_TAG)" \
-		--region "$(REGION)"; \
-	gcloud builds submit JOBS/GetMovies \
-		--tag "$(AR_BASE)/getmovies-image:$(IMAGE_TAG)" \
-		--region "$(REGION)"; \
-	gcloud builds submit JOBS/DownloadImdbData \
-		--tag "$(AR_BASE)/downloadimdbdata-image:$(IMAGE_TAG)" \
-		--region "$(REGION)"; \
-	echo "==> done"; \
-	echo "Tags pushed:"; \
-	echo "  $(AR_BASE)/get-torrents-for-movie-service:$(IMAGE_TAG)"; \
-	echo "  $(AR_BASE)/get-imdb-rating-service:$(IMAGE_TAG)"; \
-	echo "  $(AR_BASE)/getmovies-image:$(IMAGE_TAG)"; \
-	echo "  $(AR_BASE)/downloadimdbdata-image:$(IMAGE_TAG)"
-
-print-images:
-	@echo "$(AR_BASE)/get-torrents-for-movie-service:$(IMAGE_TAG)"
-	@echo "$(AR_BASE)/get-imdb-rating-service:$(IMAGE_TAG)"
-	@echo "$(AR_BASE)/getmovies-image:$(IMAGE_TAG)"
-	@echo "$(AR_BASE)/downloadimdbdata-image:$(IMAGE_TAG)"
-
-precommit-install:
-	@command -v pre-commit >/dev/null 2>&1 || { echo "pre-commit is not installed"; exit 1; }
-	pre-commit install
-
-precommit-run:
-	@command -v pre-commit >/dev/null 2>&1 || { echo "pre-commit is not installed"; exit 1; }
-	pre-commit run --all-files
+verify: test race cover vet lint vuln build
 
 clean:
-	@rm -rf $(COVER_DIR) $(CACHE_DIR)
+	@rm -rf "$(COVER_DIR)" "$(CACHE_DIR)" "$(CURDIR)/bin"

@@ -1,0 +1,9 @@
+.git
+.github
+.cache
+.coverage
+bin
+infra
+plans
+**/*_test.go
+**/.DS_Store

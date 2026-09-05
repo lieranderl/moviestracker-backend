@@ -1,55 +1,15 @@
 # Contributing
 
-## Development Workflow
-1. Create a feature branch.
-2. Keep changes scoped to one module when possible.
-3. Run formatting, tests, and checks locally before pushing.
-4. Open PR with clear summary and risk notes.
+Use a feature branch and keep changes in the root Go module. Add deterministic,
+offline tests for changed behavior and pass `make verify` before opening a PR.
 
-## Required Local Checks
-- `make fmt`
-- `make vet`
-- `make test`
-- `make race`
-- `make precommit-run`
+Key rules:
 
-For deeper quality/security checks:
-- `make lint`
-- `make staticcheck`
-- `make gosec`
+- propagate caller contexts through all I/O and worker boundaries;
+- return errors outside `main` instead of terminating the process;
+- use ADC and dedicated service identities, never credential strings;
+- preserve `GET /getimdb?imdb_id=tt…` response/error semantics;
+- keep tracker parsing, TMDB enrichment, persistence, and orchestration separate;
+- do not restore MongoDB, Kinozal, Firebase Admin, or GetTorrentsForMovie.
 
-## Testing Standards
-- Prefer table-driven unit tests for pure logic.
-- Add integration tests only when behavior depends on external systems.
-- Avoid flaky tests (time/network dependent) unless explicitly tagged and optional.
-- Target at least:
-  - overall coverage: 70%+
-  - critical paths (HTTP handlers + core logic): 85%+
-
-## Code Standards
-- Use idiomatic Go.
-- Wrap errors with `%w` when returning upstream.
-- Validate inputs at boundaries (HTTP handlers / CLI args).
-- Use `context.Context` for cancellation/timeouts in I/O and long-running paths.
-- Avoid logging secrets or full credential-bearing payloads.
-
-## Multi-Module Notes
-This repository has four separate Go modules. Run commands from module directories for ad-hoc work, or use root `Makefile` targets to run across all modules.
-
-## Git Hooks
-- Install hooks once: `make precommit-install`
-- Hooks run on commit and include formatting + targeted module vet/test checks.
-
-## CI Expectations
-PRs are expected to pass `.github/workflows/ci.yml` checks:
-- format check
-- vet
-- tests + race
-- staticcheck, gosec, golangci-lint
-- build + Docker build
-
-## Security & Secrets
-- Never commit real credentials.
-- Keep `.env` local only.
-- Use secret manager integrations in deploy scripts.
-- If a secret is leaked, rotate immediately.
+Production changes use a reviewed OpenTofu plan from a published GitHub release.

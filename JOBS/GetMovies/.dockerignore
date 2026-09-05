@@ -1,8 +1,0 @@
-# Ignore everything
-*
-
-# Except build folders
-!/cmd
-!/go.mod
-!/go.sum
-
