@@ -56,17 +56,22 @@ variable "api_gateway_config_id" {
   default = "firestore-v1"
 }
 
-variable "retire_legacy_resources" {
-  description = "Destroy imported torrent-service and Mongo/Kinozal secrets during cutover."
+variable "retire_backend_legacy_resources" {
+  description = "Destroy the imported torrent service and Kinozal secret during the backend cutover."
   type        = bool
   default     = true
 }
 
-variable "legacy_secret_ids" {
+variable "retire_frontend_legacy_resources" {
+  description = "Destroy imported MongoDB and Firebase secrets after the Firestore/JWT frontend is live."
+  type        = bool
+  default     = false
+}
+
+variable "frontend_legacy_secret_ids" {
   type = set(string)
   default = [
     "FIREBASEADMIN_CONFIG",
-    "KZ_PASSWORD",
     "MONGO_INITDB_ROOT_PASSWORD",
     "MONGO_INITDB_ROOT_USERNAME",
     "MONGO_URI",
