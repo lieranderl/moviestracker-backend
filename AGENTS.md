@@ -109,6 +109,13 @@ make test race cover vet lint vuln build
   run `gcloud run services update` / `jobs update` by hand.
 - Images are deployed by digest only. `infra/prod/run.tf` intentionally sets
   `ignore_changes` on container images so releases, not OpenTofu, move them.
+- **Two GitHub platform features the docs used to assume are unavailable here.**
+  Artifact attestations fail with "Feature not available for user-owned private
+  repositories", and environment protection rules (required reviewers) are
+  rejected by the billing plan. The `attest-build-provenance` step is therefore
+  `continue-on-error: true`. Do not present the release as cryptographically
+  attested or human-gated until the repository is public or org-owned on a
+  supporting plan.
 - `infra/bootstrap` has **no remote backend**; its state is local and
   untracked. Do not run it opportunistically. Treat it as a break-glass
   administrator task and confirm with the maintainer first.

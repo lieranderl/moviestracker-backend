@@ -89,7 +89,15 @@ jobs:
           # is racy regardless, so the SBOM is retained as a build artifact
           # instead and the job keeps least-privilege contents: read.
           upload-release-assets: false
+      # GitHub artifact attestations are unavailable for user-owned private
+      # repositories: the API returns "Feature not available for user-owned
+      # private repositories". Keep the step so provenance starts being recorded
+      # automatically if this repository is made public or moved into an
+      # organisation on a plan that supports it, but do not let the platform
+      # limitation block delivery. Supply-chain assurance meanwhile rests on
+      # digest-pinned deploys, the Trivy gate, and the retained SBOM artifact.
       - uses: actions/attest-build-provenance@v4
+        continue-on-error: true
         with:
           subject-name: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT }}/${{ env.GAR_REPOSITORY }}/${{ matrix.app }}
           subject-digest: ${{ steps.push.outputs.digest }}

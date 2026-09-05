@@ -17,13 +17,19 @@ torrent search.
 - Cloud Storage generation-aware immutable IMDb index, refreshed every 15 min
 - Cloud Run service/jobs with dedicated identities and scale-to-zero defaults
 - OpenTofu 1.12.6 and Google providers 7.42.0
-- GitHub release workflow with OIDC, image scans, SBOMs, attestations, reviewed
-  saved plans, digest deployments, and smoke checks
+- GitHub release workflow with OIDC, image scans, SBOMs, digest deployments,
+  fresh-data jobs, smoke checks, and automatic image rollback
 
 ## Known open issues
 
 Tracked but not yet fixed, so the README does not overstate the current state:
 
+- **Build provenance attestation does not work on this repository.** GitHub
+  artifact attestations are unavailable for user-owned private repositories, and
+  environment protection rules (required reviewers) are unavailable on the
+  current billing plan. Releases therefore carry no cryptographic provenance and
+  no human approval gate. Making the repository public, or moving it into an
+  organisation on a supporting plan, would enable both.
 - The IMDb ratings index peaks at ~479 MiB during refresh against a 512 MiB
   Cloud Run limit (measured, 1.71M rows).
 - `get-imdb-rating-service` runs with CPU throttled outside requests, so the
