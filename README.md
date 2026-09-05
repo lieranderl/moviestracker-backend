@@ -20,6 +20,18 @@ torrent search.
 - GitHub release workflow with OIDC, image scans, SBOMs, attestations, reviewed
   saved plans, digest deployments, and smoke checks
 
+## Known open issues
+
+Tracked but not yet fixed, so the README does not overstate the current state:
+
+- The IMDb ratings index peaks at ~479 MiB during refresh against a 512 MiB
+  Cloud Run limit (measured, 1.71M rows).
+- `get-imdb-rating-service` runs with CPU throttled outside requests, so the
+  15-minute background refresh goroutine is not reliably scheduled.
+- TMDB enrichment matches ~42% of the `latesttorrentsmovies` candidates because
+  it only inspects the first search result and compares titles and years for
+  exact equality.
+
 ## Local verification
 
 ```sh

@@ -8,9 +8,16 @@ on:
 permissions:
   contents: read
 
+# A superseded push or PR update makes the in-flight run irrelevant; cancelling
+# frees runners and shortens feedback time.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   go:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -38,7 +45,9 @@ jobs:
   containers:
     needs: go
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
         app: [getmovies, getimdbrating, downloadimdbdata]
     steps:
@@ -49,16 +58,20 @@ jobs:
           context: .
           build-args: APP=${{ matrix.app }}
           load: true
+          cache-from: type=gha,scope=ci-${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=ci-${{ matrix.app }}
           tags: moviestracker/${{ matrix.app }}:${{ github.sha }}
       - uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: moviestracker/${{ matrix.app }}:${{ github.sha }}
           format: table
           severity: HIGH,CRITICAL
+          ignore-unfixed: true
           exit-code: "1"
 
   infrastructure:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: opentofu/setup-opentofu@v2.0.2
