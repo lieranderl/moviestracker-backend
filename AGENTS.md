@@ -1,6 +1,6 @@
 # MoviesTracker Backend
 
-Single Go 1.27.1 module for three Cloud Run workloads under `cmd/`. Shared code
+Single Go 1.26.8 module for three Cloud Run workloads under `cmd/`. Shared code
 lives under `internal/` by responsibility: `catalog`, `imdb`, and `platform`.
 
 Rules:

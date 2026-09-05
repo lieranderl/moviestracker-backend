@@ -12,7 +12,7 @@ torrent search.
 
 ## Runtime architecture
 
-- Go 1.27.1, context-aware `net/http`, goquery
+- Go 1.26.8, context-aware `net/http`, goquery
 - Firestore Native database `moviestracker` in `europe-west1`
 - Cloud Storage generation-aware immutable IMDb index, refreshed every 15 min
 - Cloud Run service/jobs with dedicated identities and scale-to-zero defaults
