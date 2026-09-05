@@ -20,10 +20,10 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.release.tag_name }}
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - run: go test -race ./...
@@ -42,7 +42,7 @@ jobs:
       id-token: write
       packages: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.release.tag_name }}
       - uses: google-github-actions/auth@v3
@@ -50,10 +50,10 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_ID_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
       - run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - name: Build candidate
         id: image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           build-args: APP=${{ matrix.app }}
@@ -73,7 +73,7 @@ jobs:
           docker push "$image"
           digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' | cut -d@ -f2)
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-      - uses: anchore/sbom-action@v0.20.6
+      - uses: anchore/sbom-action@v0.24.2
         with:
           image: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT }}/${{ env.GAR_REPOSITORY }}/${{ matrix.app }}@${{ steps.push.outputs.digest }}
           artifact-name: ${{ matrix.app }}-${{ github.event.release.tag_name }}.spdx.json
@@ -83,7 +83,7 @@ jobs:
           subject-digest: ${{ steps.push.outputs.digest }}
       - name: Save immutable image
         run: echo "${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/${GAR_REPOSITORY}/${{ matrix.app }}@${{ steps.push.outputs.digest }}" > "${{ matrix.app }}.digest"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: digest-${{ matrix.app }}
           path: ${{ matrix.app }}.digest
@@ -97,10 +97,10 @@ jobs:
     env:
       TF_VAR_rutor_urls: ${{ secrets.RUTOR_URLS_JSON }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.release.tag_name }}
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           pattern: digest-*
           merge-multiple: true
@@ -122,7 +122,7 @@ jobs:
       - run: tofu -chdir=infra/prod init -input=false
       - run: tofu -chdir=infra/prod plan -input=false -out=production.tfplan
       - run: tofu -chdir=infra/prod show -no-color production.tfplan > production-plan.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: reviewed-production-plan
           path: |
@@ -139,10 +139,10 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.release.tag_name }}
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: reviewed-production-plan
       - uses: google-github-actions/auth@v3
