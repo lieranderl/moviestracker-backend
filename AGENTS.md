@@ -97,10 +97,11 @@ Do not "clean them up" without re-verifying.
   parser. Do not reintroduce an `io.ReadAll` of the decompressed export; that
   alone previously cost ~30 MiB per refresh.
 - `get-imdb-rating-service` runs with `cpu_idle = true` (CPU only during
-  requests) and `min_instance_count = 0`. Background goroutines such as the
-  refresh ticker are therefore **not reliably scheduled** in production. Do not
-  add background timers to this service without also changing that setting and
-  accepting the cost, or moving the work onto the request path.
+  requests) and `min_instance_count = 0`. Background goroutines are therefore
+  **not reliably scheduled**. Freshness runs on the request path instead, via
+  `imdb.Refresher` (`internal/imdb/refresh.go`), which checks at most once per
+  interval and never concurrently. Do not reintroduce a `time.Ticker` here
+  without also disabling `cpu_idle` and accepting the cost.
 
 ## Verification
 
@@ -151,10 +152,10 @@ make test race cover vet lint vuln build
   Do not reintroduce `errgroup.WithContext` there; cancelling siblings on the
   first error is what previously turned one bad page into a lost run.
 - This repo has known open defects that are documented but not yet fixed
-  (IMDb refresh under `cpu_idle`, no alert on a partially degraded catalog run,
-  GitHub attestations and reviewer gate unavailable on this plan). Do not
-  silently "fix" adjacent code while doing an unrelated task; keep changes
-  scoped and mention what you noticed.
+  (no alert on a partially degraded catalog run, GitHub attestations and
+  reviewer gate unavailable on this plan). Do not silently "fix" adjacent code
+  while doing an unrelated task; keep changes scoped and mention what you
+  noticed.
 - Prefer the standard library. The dependency set is deliberately small:
   Firestore, Cloud Storage, goquery, `golang.org/x/sync`, testify. Ask before
   adding a direct dependency.

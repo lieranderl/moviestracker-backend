@@ -55,8 +55,14 @@ func run(ctx context.Context, getenv func(string) string) error {
 
 	mux := http.NewServeMux()
 	handler := imdb.NewHandler(manager.Lookup)
-	mux.Handle("GET /getimdb", handler)
-	mux.Handle("GET /", handler)
+	// Freshness runs on the request path, not on a timer: this service has CPU
+	// allocated only while serving, so a background ticker is not reliably
+	// scheduled. Probes are registered outside the middleware so they never
+	// trigger a storage call.
+	refresher := imdb.NewRefresher(manager, source, config.refreshInterval)
+	fresh := refresher.Middleware(handler)
+	mux.Handle("GET /getimdb", fresh)
+	mux.Handle("GET /", fresh)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
 		if manager.Generation() == 0 {
@@ -74,23 +80,6 @@ func run(ctx context.Context, getenv func(string) string) error {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	refreshDone := make(chan struct{})
-	go func() {
-		defer close(refreshDone)
-		ticker := time.NewTicker(config.refreshInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := manager.Refresh(ctx, source); err != nil {
-					slog.Error("IMDb index refresh failed; retaining current snapshot", "error", err)
-				}
-			}
-		}
-	}()
-
 	serverErr := make(chan error, 1)
 	go func() { serverErr <- server.ListenAndServe() }()
 	select {
@@ -105,7 +94,6 @@ func run(ctx context.Context, getenv func(string) string) error {
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("shutdown IMDb service: %w", err)
 		}
-		<-refreshDone
 		return nil
 	}
 }
