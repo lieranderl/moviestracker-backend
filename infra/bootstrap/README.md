@@ -12,5 +12,7 @@ tofu apply bootstrap.tfplan
 ```
 
 The stack also creates the release-tag-only GitHub OIDC trust and a deployer
-with broad read access but write access limited to Artifact Registry and Cloud
-Run. Never add application service accounts to the state bucket.
+that can push to the MoviesTracker Artifact Registry repository and update
+Cloud Run workloads. It cannot change IAM, secrets, databases, monitoring,
+schedulers, APIs, or OpenTofu state. Never add application service accounts to
+the state bucket.

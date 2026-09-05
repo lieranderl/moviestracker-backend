@@ -88,50 +88,8 @@ jobs:
           name: digest-${{ matrix.app }}
           path: ${{ matrix.app }}.digest
 
-  plan:
+  deploy:
     needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    env:
-      TF_VAR_rutor_urls: ${{ secrets.RUTOR_URLS_JSON }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.release.tag_name }}
-      - uses: actions/download-artifact@v5
-        with:
-          pattern: digest-*
-          merge-multiple: true
-      - name: Assemble image variables
-        run: |
-          jq -n \
-            --arg getmovies "$(cat getmovies.digest)" \
-            --arg getimdbrating "$(cat getimdbrating.digest)" \
-            --arg downloadimdbdata "$(cat downloadimdbdata.digest)" \
-            '{getmovies:$getmovies,getimdbrating:$getimdbrating,downloadimdbdata:$downloadimdbdata}' > images.json
-          echo "TF_VAR_images=$(jq -c . images.json)" >> "$GITHUB_ENV"
-      - uses: google-github-actions/auth@v3
-        with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_ID_PROVIDER }}
-          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
-      - uses: opentofu/setup-opentofu@v2.0.2
-        with:
-          tofu_version: 1.12.6
-      - run: tofu -chdir=infra/prod init -input=false
-      - run: tofu -chdir=infra/prod plan -input=false -out=production.tfplan
-      - run: tofu -chdir=infra/prod show -no-color production.tfplan > production-plan.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: reviewed-production-plan
-          path: |
-            infra/prod/production.tfplan
-            production-plan.txt
-          retention-days: 2
-
-  apply:
-    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: production
@@ -139,28 +97,29 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.release.tag_name }}
       - uses: actions/download-artifact@v5
         with:
-          name: reviewed-production-plan
+          pattern: digest-*
+          merge-multiple: true
       - uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_ID_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
-      - uses: opentofu/setup-opentofu@v2.0.2
-        with:
-          tofu_version: 1.12.6
-      - run: tofu -chdir=infra/prod init -input=false
-      - name: Capture current serving revision
-        id: previous
+      - name: Capture current images
         run: |
-          revision=$(gcloud run services describe get-imdb-rating-service --project="$GCP_PROJECT" --region="$GCP_REGION" --format=json | jq -r '[.status.traffic[] | select((.percent // 0) > 0)][0].revisionName')
-          test -n "$revision" && test "$revision" != "null"
-          echo "revision=$revision" >> "$GITHUB_OUTPUT"
-      - name: Apply exact reviewed plan
-        run: tofu -chdir=infra/prod apply -input=false production.tfplan
+          mkdir rollback
+          gcloud run services describe get-imdb-rating-service --project="$GCP_PROJECT" --region="$GCP_REGION" --format='value(spec.template.spec.containers[0].image)' > rollback/getimdbrating
+          for collection in latesttorrentsmovies hdr10movies dvmovies; do
+            gcloud run jobs describe "getmovies-${collection}-job" --project="$GCP_PROJECT" --region="$GCP_REGION" --format='value(spec.template.spec.template.spec.containers[0].image)' > "rollback/getmovies-${collection}"
+          done
+          gcloud run jobs describe downloadimdbdata-job --project="$GCP_PROJECT" --region="$GCP_REGION" --format='value(spec.template.spec.template.spec.containers[0].image)' > rollback/downloadimdbdata
+      - name: Deploy immutable images
+        run: |
+          gcloud run services update get-imdb-rating-service --project="$GCP_PROJECT" --region="$GCP_REGION" --image="$(cat getimdbrating.digest)" --quiet
+          for collection in latesttorrentsmovies hdr10movies dvmovies; do
+            gcloud run jobs update "getmovies-${collection}-job" --project="$GCP_PROJECT" --region="$GCP_REGION" --image="$(cat getmovies.digest)" --quiet
+          done
+          gcloud run jobs update downloadimdbdata-job --project="$GCP_PROJECT" --region="$GCP_REGION" --image="$(cat downloadimdbdata.digest)" --quiet
       - name: Run fresh-data jobs
         run: |
           gcloud run jobs execute getmovies-latesttorrentsmovies-job --project="$GCP_PROJECT" --region="$GCP_REGION" --wait
@@ -172,6 +131,11 @@ jobs:
           API_GATEWAY_URL: ${{ vars.API_GATEWAY_URL }}
           API_KEY: ${{ secrets.GC_API_KEY }}
         run: curl --fail --show-error --silent "${API_GATEWAY_URL}/getimdb?imdb_id=tt0133093&key=${API_KEY}" | jq -e '.Id == "tt0133093"'
-      - name: Roll back IMDb traffic on failure
-        if: failure() && steps.previous.outputs.revision != ''
-        run: gcloud run services update-traffic get-imdb-rating-service --project="$GCP_PROJECT" --region="$GCP_REGION" --to-revisions="${{ steps.previous.outputs.revision }}=100" --quiet
+      - name: Roll back workload images on failure
+        if: failure()
+        run: |
+          test ! -s rollback/getimdbrating || gcloud run services update get-imdb-rating-service --project="$GCP_PROJECT" --region="$GCP_REGION" --image="$(cat rollback/getimdbrating)" --quiet
+          for collection in latesttorrentsmovies hdr10movies dvmovies; do
+            test ! -s "rollback/getmovies-${collection}" || gcloud run jobs update "getmovies-${collection}-job" --project="$GCP_PROJECT" --region="$GCP_REGION" --image="$(cat "rollback/getmovies-${collection}")" --quiet
+          done
+          test ! -s rollback/downloadimdbdata || gcloud run jobs update downloadimdbdata-job --project="$GCP_PROJECT" --region="$GCP_REGION" --image="$(cat rollback/downloadimdbdata)" --quiet

@@ -61,6 +61,10 @@ resource "google_cloud_run_v2_service" "imdb" {
     }
   }
 
+  lifecycle {
+    ignore_changes = [template[0].containers[0].image]
+  }
+
   depends_on = [
     google_project_service.required,
     google_service_account_iam_member.github_act_as,
@@ -128,6 +132,11 @@ resource "google_cloud_run_v2_job" "catalog" {
     }
   }
 
+
+  lifecycle {
+    ignore_changes = [template[0].template[0].containers[0].image]
+  }
+
   depends_on = [
     google_project_service.required,
     google_service_account_iam_member.github_act_as,
@@ -171,6 +180,10 @@ resource "google_cloud_run_v2_job" "imdb_downloader" {
     }
   }
 
+  lifecycle {
+    ignore_changes = [template[0].template[0].containers[0].image]
+  }
+
   depends_on = [
     google_project_service.required,
     google_service_account_iam_member.github_act_as,
@@ -192,4 +205,21 @@ resource "google_cloud_run_v2_job_iam_member" "scheduler_imdb_invoker" {
   name     = google_cloud_run_v2_job.imdb_downloader.name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.scheduler.email}"
+}
+
+resource "google_cloud_run_v2_job_iam_member" "github_catalog_invoker" {
+  for_each = google_cloud_run_v2_job.catalog
+  project  = var.project_id
+  location = var.region
+  name     = each.value.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:movies-github-deployer@${var.project_id}.iam.gserviceaccount.com"
+}
+
+resource "google_cloud_run_v2_job_iam_member" "github_imdb_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_job.imdb_downloader.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:movies-github-deployer@${var.project_id}.iam.gserviceaccount.com"
 }

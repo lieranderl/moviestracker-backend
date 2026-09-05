@@ -27,30 +27,21 @@ resource "google_service_account" "github_deployer" {
   display_name = "MoviesTracker GitHub release deployer"
 }
 
-resource "google_storage_bucket_iam_member" "github_state" {
-  bucket = google_storage_bucket.tofu_state.name
-  role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${google_service_account.github_deployer.email}"
-}
-
 resource "google_project_iam_member" "github_roles" {
   for_each = toset([
-    "roles/apigateway.admin",
-    "roles/artifactregistry.admin",
-    "roles/cloudscheduler.admin",
-    "roles/datastore.owner",
-    "roles/iam.serviceAccountAdmin",
-    "roles/logging.configWriter",
-    "roles/monitoring.editor",
-    "roles/resourcemanager.projectIamAdmin",
-    "roles/run.admin",
-    "roles/secretmanager.admin",
-    "roles/serviceusage.serviceUsageAdmin",
-    "roles/storage.admin",
+    "roles/run.developer",
   ])
   project = var.project_id
   role    = each.value
   member  = "serviceAccount:${google_service_account.github_deployer.email}"
+}
+
+resource "google_artifact_registry_repository_iam_member" "github_writer" {
+  project    = var.project_id
+  location   = var.region
+  repository = var.artifact_repository
+  role       = "roles/artifactregistry.writer"
+  member     = "serviceAccount:${google_service_account.github_deployer.email}"
 }
 
 resource "google_iam_workload_identity_pool" "github" {

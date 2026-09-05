@@ -13,6 +13,11 @@ variable "state_bucket_name" {
   default = "moviestracker-f07e2-tofu-state"
 }
 
+variable "artifact_repository" {
+  type    = string
+  default = "moviestracker"
+}
+
 variable "github_repositories" {
   description = "GitHub repositories trusted for release-tag deployments."
   type        = set(string)
