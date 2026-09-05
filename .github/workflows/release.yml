@@ -133,6 +133,7 @@ jobs:
           api_key="$(gcloud secrets versions access latest --secret=GC_API_KEY --project="$GCP_PROJECT")"
           curl --fail --show-error --silent \
             --header "x-api-key: ${api_key}" \
+            --header "Referer: https://moviestracker.net/" \
             "${API_GATEWAY_URL}/getimdb?imdb_id=tt0133093" \
             | jq -e '.Id == "tt0133093"'
       - name: Roll back workload images on failure
