@@ -35,11 +35,18 @@ resource "google_storage_bucket_iam_member" "github_state" {
 
 resource "google_project_iam_member" "github_roles" {
   for_each = toset([
-    "roles/artifactregistry.writer",
-    "roles/iam.securityReviewer",
+    "roles/apigateway.admin",
+    "roles/artifactregistry.admin",
+    "roles/cloudscheduler.admin",
+    "roles/datastore.owner",
+    "roles/iam.serviceAccountAdmin",
+    "roles/logging.configWriter",
+    "roles/monitoring.editor",
+    "roles/resourcemanager.projectIamAdmin",
     "roles/run.admin",
-    "roles/serviceusage.serviceUsageViewer",
-    "roles/viewer",
+    "roles/secretmanager.admin",
+    "roles/serviceusage.serviceUsageAdmin",
+    "roles/storage.admin",
   ])
   project = var.project_id
   role    = each.value

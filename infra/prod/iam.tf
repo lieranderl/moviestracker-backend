@@ -69,8 +69,10 @@ resource "google_service_account_iam_member" "github_act_as" {
   for_each = {
     app             = google_service_account.app.name
     catalog_jobs    = google_service_account.catalog_jobs.name
+    gateway         = google_service_account.gateway.name
     imdb_downloader = google_service_account.imdb_downloader.name
     imdb_service    = google_service_account.imdb_service.name
+    scheduler       = google_service_account.scheduler.name
   }
   service_account_id = each.value
   role               = "roles/iam.serviceAccountUser"

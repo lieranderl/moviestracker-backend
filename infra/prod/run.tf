@@ -61,7 +61,10 @@ resource "google_cloud_run_v2_service" "imdb" {
     }
   }
 
-  depends_on = [google_project_service.required]
+  depends_on = [
+    google_project_service.required,
+    google_service_account_iam_member.github_act_as,
+  ]
 }
 
 resource "google_cloud_run_v2_service_iam_member" "gateway_invoker" {
@@ -125,7 +128,10 @@ resource "google_cloud_run_v2_job" "catalog" {
     }
   }
 
-  depends_on = [google_project_service.required]
+  depends_on = [
+    google_project_service.required,
+    google_service_account_iam_member.github_act_as,
+  ]
 }
 
 resource "google_cloud_run_v2_job" "imdb_downloader" {
@@ -165,7 +171,10 @@ resource "google_cloud_run_v2_job" "imdb_downloader" {
     }
   }
 
-  depends_on = [google_project_service.required]
+  depends_on = [
+    google_project_service.required,
+    google_service_account_iam_member.github_act_as,
+  ]
 }
 
 resource "google_cloud_run_v2_job_iam_member" "scheduler_catalog_invoker" {

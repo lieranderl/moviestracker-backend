@@ -31,6 +31,8 @@ resource "google_api_gateway_api_config" "movies" {
   lifecycle {
     create_before_destroy = true
   }
+
+  depends_on = [google_service_account_iam_member.github_act_as]
 }
 
 resource "google_api_gateway_gateway" "movies" {
