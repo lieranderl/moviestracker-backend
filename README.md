@@ -37,9 +37,10 @@ Tracked but not yet fixed, so the README does not overstate the current state:
   that needs an OpenTofu apply.
 - `get-imdb-rating-service` runs with CPU throttled outside requests, so the
   15-minute background refresh goroutine is not reliably scheduled.
-- TMDB enrichment matches ~42% of the `latesttorrentsmovies` candidates because
-  it only inspects the first search result and compares titles and years for
-  exact equality.
+- TMDB enrichment resolves ~85% of `latesttorrentsmovies` candidates, ~96% of
+  `hdr10movies` and ~97% of `dvmovies`. The remainder are releases the tracker
+  names by transliteration (`Yip Man`, `Lai zi wang xing de ni`) or with a
+  truncated title, which TMDB cannot resolve from the scraped string.
 
 ## Local verification
 
