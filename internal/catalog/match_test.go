@@ -1,10 +1,31 @@
 package catalog
 
 import (
+	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestMatcherCheckedInCorpus(t *testing.T) {
+	type corpusCase struct {
+		Name       string      `json:"name"`
+		SearchName string      `json:"search_name"`
+		SearchYear string      `json:"search_year"`
+		Candidates []Candidate `json:"candidates"`
+		WantIndex  int         `json:"want_index"`
+	}
+	raw, err := os.ReadFile("testdata/matcher_corpus.json")
+	require.NoError(t, err)
+	var corpus []corpusCase
+	require.NoError(t, json.Unmarshal(raw, &corpus))
+	for _, test := range corpus {
+		t.Run(test.Name, func(t *testing.T) {
+			require.Equal(t, test.WantIndex, SelectCandidate(test.SearchName, test.SearchYear, test.Candidates))
+		})
+	}
+}
 
 // These cases are the real TMDB responses for releases the previous matcher
 // discarded. They were captured by querying TMDB with the scraped name and year

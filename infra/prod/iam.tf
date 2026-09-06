@@ -29,6 +29,7 @@ resource "google_service_account" "app" {
 }
 
 resource "google_service_account" "gateway" {
+  count        = var.enable_gateway_fallback ? 1 : 0
   project      = var.project_id
   account_id   = "movies-api-gateway"
   display_name = "MoviesTracker API Gateway"
@@ -65,7 +66,32 @@ resource "google_secret_manager_secret_iam_member" "catalog_tmdb" {
   member    = "serviceAccount:${google_service_account.catalog_jobs.email}"
 }
 
+locals {
+  frontend_secret_ids = toset(concat(
+    ["AUTH_SECRET", "GOOGLE_SECRET", "TMDB_API_KEY"],
+    var.enable_gateway_fallback ? ["GC_API_KEY"] : [],
+  ))
+}
+
+resource "google_secret_manager_secret" "frontend" {
+  for_each  = local.frontend_secret_ids
+  project   = var.project_id
+  secret_id = each.value
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_iam_member" "app_frontend_secrets" {
+  for_each  = google_secret_manager_secret.frontend
+  project   = var.project_id
+  secret_id = each.value.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.app.email}"
+}
+
 resource "google_secret_manager_secret_iam_member" "github_gateway_api_key" {
+  count     = var.enable_gateway_fallback ? 1 : 0
   project   = var.project_id
   secret_id = "GC_API_KEY"
   role      = "roles/secretmanager.secretAccessor"

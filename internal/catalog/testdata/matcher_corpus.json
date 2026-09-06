@@ -1,0 +1,44 @@
+[
+  {
+    "name": "exact release",
+    "search_name": "Bad Boys",
+    "search_year": "1995",
+    "candidates": [{"original_title":"Bad Boys","title":"Плохие парни","release_year":"1995","rank":0}],
+    "want_index": 0
+  },
+  {
+    "name": "adjacent festival year",
+    "search_name": "Relay",
+    "search_year": "2024",
+    "candidates": [{"original_title":"Relay","title":"Диспетчер","release_year":"2025","rank":0}],
+    "want_index": 0
+  },
+  {
+    "name": "transliterated alternate title",
+    "search_name": "Магеллан",
+    "search_year": "2025",
+    "candidates": [{"original_title":"Magalhães","title":"Магеллан","release_year":"2025","rank":0}],
+    "want_index": 0
+  },
+  {
+    "name": "remake must not match original",
+    "search_name": "Dune",
+    "search_year": "2021",
+    "candidates": [{"original_title":"Dune","title":"Dune","release_year":"1984","rank":0}],
+    "want_index": -1
+  },
+  {
+    "name": "short common prefix false positive",
+    "search_name": "The Cut",
+    "search_year": "2024",
+    "candidates": [{"original_title":"The Cutting Edge","title":"The Cutting Edge","release_year":"2024","rank":1}],
+    "want_index": -1
+  },
+  {
+    "name": "observed miss",
+    "search_name": "Unknown Release",
+    "search_year": "2025",
+    "candidates": [],
+    "want_index": -1
+  }
+]

@@ -142,6 +142,33 @@ func TestParseRatingsOrdersEntriesNumerically(t *testing.T) {
 	}
 }
 
+func TestParseRatingsSkipsSortForOrderedInput(t *testing.T) {
+	index, stats, err := ParseRatingsWithStats(strings.NewReader(
+		"tt0000001\t7.0\t1\ntt0000002\t8.0\t2\ntt10000000\t9.0\t3\n",
+	))
+
+	require.NoError(t, err)
+	require.True(t, stats.InputOrdered)
+	require.False(t, stats.SortApplied)
+	require.Equal(t, 3, stats.CompactRows)
+	require.Equal(t, []uint32{1, 2, 10000000}, []uint32{
+		index.entries[0].id, index.entries[1].id, index.entries[2].id,
+	})
+}
+
+func TestParseRatingsSortsUnorderedInputAsFallback(t *testing.T) {
+	index, stats, err := ParseRatingsWithStats(strings.NewReader(
+		"tt10000000\t9.0\t3\ntt0000002\t8.0\t2\ntt0000001\t7.0\t1\n",
+	))
+
+	require.NoError(t, err)
+	require.False(t, stats.InputOrdered)
+	require.True(t, stats.SortApplied)
+	require.Equal(t, []uint32{1, 2, 10000000}, []uint32{
+		index.entries[0].id, index.entries[1].id, index.entries[2].id,
+	})
+}
+
 func TestScaledRatingBoundaries(t *testing.T) {
 	for _, test := range []struct {
 		raw    string
@@ -255,6 +282,16 @@ func BenchmarkParseRatings(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		if _, err := ParseRatings(syntheticRatings(200_000)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkParseRatingsUnordered(b *testing.B) {
+	raw := "tt10000000\t7.0\t1\ntt0000002\t8.0\t2\ntt0000001\t9.0\t3\n"
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, _, err := ParseRatingsWithStats(strings.NewReader(raw)); err != nil {
 			b.Fatal(err)
 		}
 	}

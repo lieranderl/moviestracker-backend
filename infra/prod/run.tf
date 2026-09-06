@@ -75,12 +75,138 @@ resource "google_cloud_run_v2_service" "imdb" {
   ]
 }
 
+resource "google_cloud_run_v2_service" "frontend" {
+  project             = var.project_id
+  name                = "moviestracker-app"
+  location            = var.region
+  ingress             = "INGRESS_TRAFFIC_ALL"
+  deletion_protection = true
+
+  template {
+    service_account                  = google_service_account.app.email
+    timeout                          = "60s"
+    max_instance_request_concurrency = 40
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 2
+    }
+    containers {
+      image = var.images.frontend
+      ports {
+        container_port = 3000
+      }
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+        cpu_idle = true
+      }
+      env {
+        name  = "NODE_ENV"
+        value = "production"
+      }
+      env {
+        name  = "AUTH_URL"
+        value = var.frontend_url
+      }
+      env {
+        name  = "GOOGLE_ID"
+        value = var.google_oauth_client_id
+      }
+      env {
+        name  = "GCP_PROJECT"
+        value = var.project_id
+      }
+      env {
+        name  = "FIRESTORE_DATABASE"
+        value = google_firestore_database.movies.name
+      }
+      env {
+        name  = "IMDB_SERVICE_URL"
+        value = google_cloud_run_v2_service.imdb.uri
+      }
+      dynamic "env" {
+        for_each = google_secret_manager_secret.frontend
+        content {
+          name = env.key
+          value_source {
+            secret_key_ref {
+              secret  = env.value.secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+      startup_probe {
+        initial_delay_seconds = 1
+        timeout_seconds       = 3
+        period_seconds        = 3
+        failure_threshold     = 20
+        http_get {
+          path = "/healthz"
+          port = 3000
+        }
+      }
+      liveness_probe {
+        timeout_seconds   = 3
+        period_seconds    = 30
+        failure_threshold = 3
+        http_get {
+          path = "/healthz"
+          port = 3000
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      client,
+      client_version,
+      template[0].containers[0].image,
+      traffic,
+    ]
+  }
+
+  depends_on = [
+    google_project_service.required,
+    google_secret_manager_secret_iam_member.app_frontend_secrets,
+    google_service_account_iam_member.github_frontend_act_as,
+  ]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "frontend_public_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.frontend.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
 resource "google_cloud_run_v2_service_iam_member" "gateway_invoker" {
+  count    = var.enable_gateway_fallback ? 1 : 0
   project  = var.project_id
   location = var.region
   name     = google_cloud_run_v2_service.imdb.name
   role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.gateway.email}"
+  member   = "serviceAccount:${google_service_account.gateway[0].email}"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "app_imdb_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.imdb.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.app.email}"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "downloader_imdb_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.imdb.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.imdb_downloader.email}"
 }
 
 resource "google_cloud_run_v2_job" "catalog" {
@@ -118,6 +244,10 @@ resource "google_cloud_run_v2_job" "catalog" {
         env {
           name  = "JOB_TIMEOUT"
           value = "10m"
+        }
+        env {
+          name  = "ENRICHER_CONCURRENCY"
+          value = "10"
         }
         env {
           name  = each.key == "latesttorrentsmovies" ? "RUTOR_URLS" : each.key == "hdr10movies" ? "RUTOR_HDR10_URLS" : "RUTOR_DV_URLS"
@@ -183,6 +313,10 @@ resource "google_cloud_run_v2_job" "imdb_downloader" {
         env {
           name  = "JOB_TIMEOUT"
           value = "5m"
+        }
+        env {
+          name  = "IMDB_SERVICE_URL"
+          value = google_cloud_run_v2_service.imdb.uri
         }
       }
     }
@@ -264,7 +398,7 @@ resource "google_cloud_run_v2_job_iam_member" "github_imdb_developer" {
 resource "google_cloud_run_v2_service_iam_member" "github_frontend_developer" {
   project  = var.project_id
   location = var.region
-  name     = "moviestracker-app"
+  name     = google_cloud_run_v2_service.frontend.name
   role     = "roles/run.developer"
   member   = "serviceAccount:movies-frontend-deployer@${var.project_id}.iam.gserviceaccount.com"
 }

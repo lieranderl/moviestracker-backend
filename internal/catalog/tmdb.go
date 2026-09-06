@@ -31,14 +31,31 @@ func NewTMDBClient(client *http.Client, baseURL, apiKey string) *TMDBClient {
 }
 
 func (c *TMDBClient) Enrich(ctx context.Context, movie Movie) (Movie, error) {
+	aliases := movie.SearchAliases
+	if len(aliases) == 0 {
+		aliases = distinctNonEmpty(movie.SearchName)
+	}
+	for _, alias := range aliases {
+		enriched, accepted, err := c.enrichAlias(ctx, movie, alias)
+		if err != nil {
+			return movie, err
+		}
+		if accepted {
+			return enriched, nil
+		}
+	}
+	return movie, nil
+}
+
+func (c *TMDBClient) enrichAlias(ctx context.Context, movie Movie, alias string) (Movie, bool, error) {
 	endpoint, err := url.Parse(c.baseURL + "/search/movie")
 	if err != nil {
-		return movie, fmt.Errorf("parse TMDB endpoint: %w", err)
+		return movie, false, fmt.Errorf("parse TMDB endpoint: %w", err)
 	}
 	query := endpoint.Query()
 	query.Set("api_key", c.apiKey)
 	query.Set("language", "ru")
-	query.Set("query", movie.SearchName)
+	query.Set("query", alias)
 	if movie.Year != "" {
 		query.Set("year", movie.Year)
 	}
@@ -46,15 +63,15 @@ func (c *TMDBClient) Enrich(ctx context.Context, movie Movie) (Movie, error) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
-		return movie, fmt.Errorf("build TMDB request: %w", err)
+		return movie, false, fmt.Errorf("build TMDB request: %w", err)
 	}
 	resp, err := c.doWithRetry(ctx, req)
 	if err != nil {
-		return movie, fmt.Errorf("search TMDB: %w", err)
+		return movie, false, fmt.Errorf("search TMDB: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return movie, fmt.Errorf("search TMDB: unexpected status %s", resp.Status)
+		return movie, false, fmt.Errorf("search TMDB: unexpected status %s", resp.Status)
 	}
 
 	var payload struct {
@@ -71,10 +88,10 @@ func (c *TMDBClient) Enrich(ctx context.Context, movie Movie) (Movie, error) {
 		} `json:"results"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return movie, fmt.Errorf("decode TMDB response: %w", err)
+		return movie, false, fmt.Errorf("decode TMDB response: %w", err)
 	}
 	if len(payload.Results) == 0 {
-		return movie, nil
+		return movie, false, nil
 	}
 
 	// Every result is considered, not just the first. TMDB routinely ranks a
@@ -89,9 +106,9 @@ func (c *TMDBClient) Enrich(ctx context.Context, movie Movie) (Movie, error) {
 			VoteCount:     result.VoteCount,
 		})
 	}
-	selected := SelectCandidate(movie.SearchName, movie.Year, candidates)
+	selected := SelectCandidate(alias, movie.Year, candidates)
 	if selected < 0 {
-		return movie, nil
+		return movie, false, nil
 	}
 	result := payload.Results[selected]
 
@@ -104,7 +121,7 @@ func (c *TMDBClient) Enrich(ctx context.Context, movie Movie) (Movie, error) {
 	movie.Title = result.Title
 	movie.VoteAverage = strconv.FormatFloat(result.VoteAverage, 'f', 1, 64)
 	movie.VoteCount = strconv.FormatInt(result.VoteCount, 10)
-	return movie, nil
+	return movie, true, nil
 }
 
 func releaseYear(releaseDate string) string {
@@ -151,17 +168,18 @@ func retryableTMDBStatus(status int) bool {
 }
 
 func tmdbRetryDelay(resp *http.Response, fallback time.Duration) time.Duration {
+	const maximum = 5 * time.Second
 	value := strings.TrimSpace(resp.Header.Get("Retry-After"))
 	if seconds, err := strconv.Atoi(value); err == nil && seconds >= 0 {
-		return time.Duration(seconds) * time.Second
+		return min(time.Duration(seconds)*time.Second, maximum)
 	}
 	if at, err := http.ParseTime(value); err == nil {
 		if delay := time.Until(at); delay > 0 {
-			return delay
+			return min(delay, maximum)
 		}
 		return 0
 	}
-	return fallback
+	return min(fallback, maximum)
 }
 
 func waitForTMDBRetry(ctx context.Context, delay time.Duration) error {

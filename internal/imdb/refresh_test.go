@@ -190,6 +190,35 @@ func TestRefresherMiddlewareServesTheRequestAndRefreshes(t *testing.T) {
 	require.JSONEq(t, `{"Id":"tt0000001","Rating":"8.8","Votes":"20"}`, recorder.Body.String())
 }
 
+func TestRefreshHandlerPublishesNewGeneration(t *testing.T) {
+	manager := loadedManager(t, "tt0000001\t7.0\t10\n")
+	refresher := NewRefresher(manager, SourceFunc(func(context.Context, int64) (Snapshot, error) {
+		return Snapshot{Generation: 2, Body: io.NopCloser(strings.NewReader("tt0000001\t9.1\t30\n"))}, nil
+	}), time.Hour)
+	recorder := httptest.NewRecorder()
+
+	NewRefreshHandler(refresher).ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/internal/refresh", nil))
+
+	require.Equal(t, http.StatusNoContent, recorder.Code)
+	require.EqualValues(t, 2, manager.Generation())
+}
+
+func TestRefreshHandlerRejectsWrongMethodAndHidesSourceError(t *testing.T) {
+	manager := loadedManager(t, "tt0000001\t7.0\t10\n")
+	refresher := NewRefresher(manager, SourceFunc(func(context.Context, int64) (Snapshot, error) {
+		return Snapshot{}, errors.New("secret storage detail")
+	}), time.Hour)
+
+	wrongMethod := httptest.NewRecorder()
+	NewRefreshHandler(refresher).ServeHTTP(wrongMethod, httptest.NewRequest(http.MethodGet, "/internal/refresh", nil))
+	require.Equal(t, http.StatusMethodNotAllowed, wrongMethod.Code)
+
+	failed := httptest.NewRecorder()
+	NewRefreshHandler(refresher).ServeHTTP(failed, httptest.NewRequest(http.MethodPost, "/internal/refresh", nil))
+	require.Equal(t, http.StatusServiceUnavailable, failed.Code)
+	require.NotContains(t, failed.Body.String(), "secret storage detail")
+}
+
 func TestManagerLenReportsLiveRowCount(t *testing.T) {
 	require.Zero(t, NewManager().Len())
 	require.Equal(t, 2, loadedManager(t, "tt0000001\t7.0\t10\ntt0000002\t8.0\t20\n").Len())

@@ -18,7 +18,29 @@ resource "google_logging_metric" "catalog_success" {
   filter  = <<-EOT
     resource.type="cloud_run_job"
     resource.labels.job_name=~"getmovies-.*-job"
-    textPayload:"catalog job completed"
+    jsonPayload.event="catalog_pipeline_completed"
+  EOT
+  label_extractors = {
+    job_name = "EXTRACT(resource.labels.job_name)"
+  }
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    labels {
+      key        = "job_name"
+      value_type = "STRING"
+    }
+  }
+}
+
+resource "google_logging_metric" "catalog_degraded" {
+  project = var.project_id
+  name    = "moviestracker/catalog_job_degraded"
+  filter  = <<-EOT
+    resource.type="cloud_run_job"
+    resource.labels.job_name=~"getmovies-.*-job"
+    jsonPayload.event="catalog_pipeline_completed"
+    (jsonPayload.failed>0 OR jsonPayload.rejected_parsing>0)
   EOT
   label_extractors = {
     job_name = "EXTRACT(resource.labels.job_name)"
@@ -39,7 +61,7 @@ resource "google_logging_metric" "imdb_download_success" {
   filter  = <<-EOT
     resource.type="cloud_run_job"
     resource.labels.job_name="downloadimdbdata-job"
-    textPayload:"IMDb ratings updated"
+    jsonPayload.event="imdb_ratings_updated"
   EOT
   metric_descriptor {
     metric_kind = "DELTA"
@@ -53,7 +75,7 @@ resource "google_logging_metric" "imdb_refresh_failure" {
   filter  = <<-EOT
     resource.type="cloud_run_revision"
     resource.labels.service_name="get-imdb-rating-service"
-    textPayload:"IMDb index refresh failed"
+    jsonPayload.event="imdb_index_refresh_failed"
   EOT
   metric_descriptor {
     metric_kind = "DELTA"
@@ -101,6 +123,31 @@ resource "google_monitoring_alert_policy" "catalog_stale" {
         group_by_fields      = ["metric.label.job_name"]
       }
     }
+  }
+}
+
+resource "google_monitoring_alert_policy" "catalog_degraded" {
+  project               = var.project_id
+  display_name          = "MoviesTracker catalog run degraded"
+  combiner              = "OR"
+  notification_channels = local.notification_channels
+  conditions {
+    display_name = "Catalog run contains parsing or upstream failures"
+    condition_threshold {
+      filter          = "resource.type = \"cloud_run_job\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.catalog_degraded.name}\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+      aggregations {
+        alignment_period     = "300s"
+        per_series_aligner   = "ALIGN_SUM"
+        cross_series_reducer = "REDUCE_SUM"
+        group_by_fields      = ["metric.label.job_name"]
+      }
+    }
+  }
+  alert_strategy {
+    auto_close = "1800s"
   }
 }
 
@@ -180,6 +227,53 @@ resource "google_monitoring_alert_policy" "imdb_latency" {
       aggregations {
         alignment_period   = "300s"
         per_series_aligner = "ALIGN_PERCENTILE_99"
+      }
+    }
+  }
+}
+
+resource "google_monitoring_alert_policy" "frontend_5xx" {
+  project               = var.project_id
+  display_name          = "MoviesTracker frontend 5xx rate"
+  combiner              = "OR"
+  notification_channels = local.notification_channels
+  conditions {
+    display_name = "5xx responses exceed 2 percent"
+    condition_threshold {
+      filter             = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = \"${google_cloud_run_v2_service.frontend.name}\" AND metric.type = \"run.googleapis.com/request_count\" AND metric.labels.response_code_class = \"5xx\""
+      denominator_filter = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = \"${google_cloud_run_v2_service.frontend.name}\" AND metric.type = \"run.googleapis.com/request_count\""
+      comparison         = "COMPARISON_GT"
+      threshold_value    = 0.02
+      duration           = "300s"
+      aggregations {
+        alignment_period     = "300s"
+        per_series_aligner   = "ALIGN_RATE"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+      denominator_aggregations {
+        alignment_period     = "300s"
+        per_series_aligner   = "ALIGN_RATE"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+}
+
+resource "google_monitoring_alert_policy" "frontend_latency" {
+  project               = var.project_id
+  display_name          = "MoviesTracker frontend warm latency"
+  combiner              = "OR"
+  notification_channels = local.notification_channels
+  conditions {
+    display_name = "p95 latency exceeds two seconds"
+    condition_threshold {
+      filter          = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = \"${google_cloud_run_v2_service.frontend.name}\" AND metric.type = \"run.googleapis.com/request_latencies\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 2000
+      duration        = "300s"
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_PERCENTILE_95"
       }
     }
   }

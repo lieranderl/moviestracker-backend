@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -20,15 +21,17 @@ import (
 const defaultJobTimeout = 10 * time.Minute
 
 type config struct {
-	collection catalog.Collection
-	database   string
-	project    string
-	timeout    time.Duration
-	tmdbAPIKey string
-	urls       []string
+	collection          catalog.Collection
+	database            string
+	enricherConcurrency int
+	project             string
+	timeout             time.Duration
+	tmdbAPIKey          string
+	urls                []string
 }
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx, os.Args[1:], os.Getenv); err != nil {
@@ -61,20 +64,26 @@ func run(parent context.Context, args []string, getenv func(string) string) erro
 		Enricher:   catalog.NewTMDBClient(httpClient, strings.TrimSpace(getenv("TMDB_BASE_URL")), config.tmdbAPIKey),
 		Repository: firestorestore.New(client),
 	}
-	result, err := runner.Run(ctx, catalog.RunConfig{Collection: config.collection, URLs: config.urls})
+	result, err := runner.Run(ctx, catalog.RunConfig{
+		Collection:          config.collection,
+		EnricherConcurrency: config.enricherConcurrency,
+		URLs:                config.urls,
+	})
 	if err != nil {
 		return fmt.Errorf("run catalog pipeline: %w", err)
 	}
 	// "catalog job completed" is matched by the log-based metric in
 	// infra/prod/monitoring.tf; do not reword it without updating that filter.
-	slog.Info("catalog job completed",
+	slog.Info("catalog pipeline completed",
+		"event", "catalog_pipeline_completed",
 		"collection", config.collection,
-		"torrents", result.Torrents,
+		"fetched", result.Fetched,
+		"rejected_parsing", result.RejectedParsing,
 		"grouped", result.Grouped,
-		"enriched", result.Enriched,
+		"resolved", result.Resolved,
+		"unresolved", result.Unresolved,
+		"failed", result.Failed,
 		"stored", result.Stored,
-		"sources_failed", result.SourcesFailed,
-		"enrich_failed", result.EnrichFailed,
 	)
 	return nil
 }
@@ -112,7 +121,15 @@ func loadConfig(args []string, getenv func(string) string) (config, error) {
 	if parsed, err := time.ParseDuration(strings.TrimSpace(getenv("JOB_TIMEOUT"))); err == nil && parsed > 0 {
 		timeout = parsed
 	}
-	return config{collection: collection, database: database, project: project, timeout: timeout, tmdbAPIKey: tmdbAPIKey, urls: urls}, nil
+	enricherConcurrency := 10
+	if raw := strings.TrimSpace(getenv("ENRICHER_CONCURRENCY")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 20 {
+			return config{}, errors.New("ENRICHER_CONCURRENCY must be between 1 and 20")
+		}
+		enricherConcurrency = parsed
+	}
+	return config{collection: collection, database: database, enricherConcurrency: enricherConcurrency, project: project, timeout: timeout, tmdbAPIKey: tmdbAPIKey, urls: urls}, nil
 }
 
 func splitURLs(raw string) []string {

@@ -9,14 +9,14 @@ import (
 // Candidate is one TMDB search result reduced to the fields that decide whether
 // it describes the same film as the scraped release.
 type Candidate struct {
-	OriginalTitle string
-	ReleaseYear   string
-	Title         string
-	VoteCount     int64
+	OriginalTitle string `json:"original_title"`
+	ReleaseYear   string `json:"release_year"`
+	Title         string `json:"title"`
+	VoteCount     int64  `json:"vote_count"`
 	// Rank is the position TMDB returned the candidate in. TMDB's own relevance
 	// ordering is a real signal, especially for films whose canonical title is
 	// in neither the tracker's language nor ours.
-	Rank int
+	Rank int `json:"rank"`
 }
 
 // confidence describes how strongly a candidate is believed to be the same film.

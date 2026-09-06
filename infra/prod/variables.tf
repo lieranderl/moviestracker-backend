@@ -26,6 +26,7 @@ variable "artifact_repository" {
 variable "images" {
   description = "Immutable Artifact Registry image URIs keyed by workload."
   type = object({
+    frontend         = string
     getmovies        = string
     getimdbrating    = string
     downloadimdbdata = string
@@ -34,6 +35,22 @@ variable "images" {
     condition     = alltrue([for image in values(var.images) : can(regex("@sha256:[0-9a-f]{64}$", image))])
     error_message = "Every image must be pinned by sha256 digest."
   }
+}
+
+variable "frontend_url" {
+  type    = string
+  default = "https://moviestracker.net"
+}
+
+variable "google_oauth_client_id" {
+  type      = string
+  sensitive = true
+}
+
+variable "enable_gateway_fallback" {
+  description = "Keep the legacy IMDb API Gateway key wired for one healthy release cycle."
+  type        = bool
+  default     = true
 }
 
 variable "rutor_urls" {

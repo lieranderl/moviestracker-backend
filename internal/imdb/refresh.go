@@ -60,17 +60,55 @@ func (r *Refresher) Ensure(ctx context.Context) {
 		return
 	}
 	r.lastAttempt.Store(now.UnixNano())
+	if err := r.refresh(ctx); err != nil {
+		slog.Error("IMDb index refresh failed; retaining current snapshot",
+			"event", "imdb_index_refresh_failed",
+			"error", err,
+		)
+	}
+}
 
+// RefreshNow synchronously checks the published generation. Cloud Run IAM
+// protects the internal HTTP endpoint that calls this method.
+func (r *Refresher) RefreshNow(ctx context.Context) error {
+	r.refreshing.Lock()
+	defer r.refreshing.Unlock()
+	r.lastAttempt.Store(time.Now().UnixNano())
+	return r.refresh(ctx)
+}
+
+func (r *Refresher) refresh(ctx context.Context) error {
 	previous := r.manager.Generation()
 	if err := r.manager.Refresh(ctx, r.source); err != nil {
-		// "IMDb index refresh failed" is matched by the log-based metric in
-		// infra/prod/monitoring.tf; do not reword it without updating that filter.
-		slog.Error("IMDb index refresh failed; retaining current snapshot", "error", err)
-		return
+		return err
 	}
 	if current := r.manager.Generation(); current != previous {
-		slog.Info("IMDb index refreshed", "generation", current, "previous", previous, "rows", r.manager.Len())
+		slog.Info("IMDb index refreshed",
+			"event", "imdb_index_refreshed",
+			"generation", current,
+			"previous_generation", previous,
+			"rows", r.manager.Len(),
+		)
 	}
+	return nil
+}
+
+func NewRefreshHandler(refresher *Refresher) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost {
+			http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := refresher.RefreshNow(request.Context()); err != nil {
+			slog.Error("IMDb index refresh failed",
+				"event", "imdb_index_refresh_failed",
+				"error", err,
+			)
+			http.Error(writer, "refresh failed", http.StatusServiceUnavailable)
+			return
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	})
 }
 
 func (r *Refresher) due(now time.Time) bool {
