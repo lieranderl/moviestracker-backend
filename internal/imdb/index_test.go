@@ -27,6 +27,17 @@ func TestParseRatingsBuildsLookupIndex(t *testing.T) {
 	require.Equal(t, 1, index.Len())
 }
 
+func FuzzParseRatings(f *testing.F) {
+	f.Add([]byte("tconst\taverageRating\tnumVotes\ntt0133093\t8.7\t2100000\n"))
+	f.Add([]byte("bad\trow\n"))
+	f.Fuzz(func(t *testing.T, input []byte) {
+		if len(input) > 1<<20 {
+			t.Skip()
+		}
+		_, _ = ParseRatings(strings.NewReader(string(input)))
+	})
+}
+
 // The published strings are part of the frozen HTTP contract, so every field has
 // to survive the round trip through the integer encoding byte for byte.
 func TestParseRatingsRoundTripsPublishedFormats(t *testing.T) {

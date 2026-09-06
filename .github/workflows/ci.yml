@@ -34,6 +34,10 @@ jobs:
           awk -v total="$total" 'BEGIN { exit(total < 65) }'
       - name: Race tests
         run: go test -race ./...
+      - name: Parser fuzz smoke
+        run: |
+          go test ./internal/catalog -run ^ -fuzz FuzzParseRutorHTML -fuzztime 5s
+          go test ./internal/imdb -run ^ -fuzz FuzzParseRatings -fuzztime 5s
       - name: Vet
         run: go vet ./...
       - name: Vulnerability scan

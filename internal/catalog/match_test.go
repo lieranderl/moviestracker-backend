@@ -27,6 +27,46 @@ func TestMatcherCheckedInCorpus(t *testing.T) {
 	}
 }
 
+func TestSecondAliasImprovesCapturedUnresolvedCorpus(t *testing.T) {
+	type corpusCase struct {
+		Name          string        `json:"name"`
+		Year          string        `json:"year"`
+		Aliases       []string      `json:"aliases"`
+		CandidateSets [][]Candidate `json:"candidate_sets"`
+		Resolved      bool          `json:"resolved"`
+	}
+	raw, err := os.ReadFile("testdata/unresolved_alias_corpus.json")
+	require.NoError(t, err)
+	var corpus []corpusCase
+	require.NoError(t, json.Unmarshal(raw, &corpus))
+	require.NotEmpty(t, corpus)
+
+	baselineResolved := 0
+	aliasResolved := 0
+	for _, test := range corpus {
+		resolvedWith := func(limit int) bool {
+			for index := 0; index < min(limit, len(test.Aliases), len(test.CandidateSets)); index++ {
+				if SelectCandidate(test.Aliases[index], test.Year, test.CandidateSets[index]) >= 0 {
+					return true
+				}
+			}
+			return false
+		}
+		baseline := resolvedWith(1)
+		improved := resolvedWith(2)
+		require.Equalf(t, test.Resolved, improved, "case %q", test.Name)
+		if baseline {
+			baselineResolved++
+		}
+		if improved {
+			aliasResolved++
+		}
+	}
+
+	gain := float64(aliasResolved-baselineResolved) / float64(len(corpus))
+	require.GreaterOrEqual(t, gain, 0.05, "second-alias resolution gain must be at least five percentage points")
+}
+
 // These cases are the real TMDB responses for releases the previous matcher
 // discarded. They were captured by querying TMDB with the scraped name and year
 // exactly as the catalog job does, so each one is a regression test for an

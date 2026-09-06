@@ -27,6 +27,17 @@ func TestParseRutorHTMLReturnsStableMovieMetadata(t *testing.T) {
 	require.True(t, got[0].HDR10Plus)
 }
 
+func FuzzParseRutorHTML(f *testing.F) {
+	f.Add([]byte(`<table><tr class="gai"><td>06 Янв 24</td><td><a href="magnet:?xt=urn:btih:ABC">m</a><a>Фильм / Movie (2024)</a></td><td>1 GB 2 1</td></tr></table>`), false)
+	f.Add([]byte(`<html><broken`), true)
+	f.Fuzz(func(t *testing.T, input []byte, series bool) {
+		if len(input) > 1<<20 {
+			t.Skip()
+		}
+		_, _ = ParseRutorHTML(strings.NewReader(string(input)), series)
+	})
+}
+
 func TestRutorClientStopsBlockedRequestWhenContextIsCancelled(t *testing.T) {
 	started := make(chan struct{})
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
