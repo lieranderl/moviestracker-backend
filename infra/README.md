@@ -3,15 +3,17 @@
 `bootstrap/` creates the private, regional, versioned state bucket plus the
 release-tag-only GitHub OIDC trust. The release identity can push images and
 update/run Cloud Run workloads, but cannot change infrastructure, IAM, secrets,
-databases, or state. `prod/` manages the existing Firestore
-database, IMDb bucket, Artifact Registry repository, API Gateway, one service,
-four jobs/schedules, least-privilege runtime identities, and alerts.
+databases, or state. `prod/` manages Firestore, the IMDb bucket, Artifact
+Registry, the Qwik and IMDb Cloud Run services, four jobs/schedules,
+least-privilege runtime identities, and alerts. Frontend releases update only
+the immutable image revision and traffic; OpenTofu owns runtime settings.
 
 ## First adoption
 
 1. Apply `bootstrap/` once as a platform administrator.
 2. Copy `terraform.tfvars.example` to an untracked tfvars file and replace every
-   image with an Artifact Registry digest and every Rutor URL placeholder.
+   image with an Artifact Registry digest and every Rutor URL placeholder. Set
+   `frontend_url` and `google_oauth_client_id` to their deployed values.
 3. Run `tofu -chdir=infra/prod init`, then create and review a saved plan. The
    declarative import blocks adopt active resources before changing them.
 4. To make backend legacy deletion explicit, first import with
@@ -31,6 +33,14 @@ four jobs/schedules, least-privilege runtime identities, and alerts.
 6. After frontend cutover, import its legacy secrets with
    `retire_frontend_legacy_resources=false`, then review a plan with
    `retire_frontend_legacy_resources=true` before deleting them.
+
+The Qwik service calls the IAM-private IMDb service directly with a Google ID
+token and the `movies-app` service account as invoker. The gateway remains only
+while `enable_gateway_fallback=true`. Keep it for at least seven healthy days or
+one normal release cycle, whichever is longer, then set the flag to `false`;
+the reviewed plan removes the gateway, gateway identity, and `GC_API_KEY`.
+The downloader invokes `POST /internal/refresh` with its workload identity after
+publishing a new IMDb generation.
 
 No 14-day parallel stack is retained. Infrastructure changes use exact reviewed
 OpenTofu plan artifacts under a platform administrator identity. Release safety

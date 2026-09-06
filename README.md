@@ -14,8 +14,8 @@ torrent search.
 
 - Go 1.26.8, context-aware `net/http`, goquery
 - Firestore Native database `moviestracker` in `europe-west1`
-- Cloud Storage generation-aware immutable IMDb index, streamed and refreshed on
-  the request path so freshness does not depend on background CPU
+- Cloud Storage generation-aware immutable IMDb index, streamed and refreshed by
+  an authenticated downloader callback, with request-path refresh as fallback
 - Cloud Run service/jobs with dedicated identities and scale-to-zero defaults
 - OpenTofu 1.12.6 and Google providers 7.42.0
 - GitHub release workflow with OIDC, image scans, SBOMs, digest deployments,
@@ -35,14 +35,9 @@ Tracked but not yet fixed, so the README does not overstate the current state:
   across a refresh, against a 512 MiB Cloud Run limit. The service still
   requests 512 MiB, so there is room to lower it once real usage is observed;
   that needs an OpenTofu apply.
-- A catalog run that is partially degraded still logs "catalog job completed",
-  so the existing alerts cannot distinguish it from a clean run. The counts are
-  in the log line; a log-based metric on `enrich_failed` and `sources_failed`
-  would close this, and needs an OpenTofu apply.
-- TMDB enrichment resolves ~85% of `latesttorrentsmovies` candidates, ~96% of
-  `hdr10movies` and ~97% of `dvmovies`. The remainder are releases the tracker
-  names by transliteration (`Yip Man`, `Lai zi wang xing de ni`) or with a
-  truncated title, which TMDB cannot resolve from the scraped string.
+- The alias matcher and degraded-run alert require a production observation
+  window before their resolution and false-positive rates can be compared with
+  the checked-in corpus and previous production baseline.
 
 ## Local verification
 
@@ -63,6 +58,8 @@ for integration tests; no database credential is supported.
 
 Copy `.env.example` to `.env` for local use. Required production secrets live
 in Secret Manager and are attached only to the workload that needs them.
+Catalog enrichment concurrency defaults to 10 and is capped at 20 through
+`ENRICHER_CONCURRENCY`.
 
 ## Infrastructure and release
 
