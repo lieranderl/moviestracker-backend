@@ -378,6 +378,14 @@ resource "google_cloud_run_v2_service_iam_member" "github_backend_developer" {
   member   = "serviceAccount:movies-backend-deployer@${var.project_id}.iam.gserviceaccount.com"
 }
 
+resource "google_cloud_run_v2_service_iam_member" "github_backend_imdb_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.imdb.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:movies-backend-deployer@${var.project_id}.iam.gserviceaccount.com"
+}
+
 resource "google_cloud_run_v2_job_iam_member" "github_catalog_developer" {
   for_each = local.catalog_jobs
   project  = var.project_id
