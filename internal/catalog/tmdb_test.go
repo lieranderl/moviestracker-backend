@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -78,4 +79,49 @@ func TestTMDBClientLeavesNonMatchingResultUnenriched(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Empty(t, got.ID)
+}
+
+func TestTMDBClientUsesRussianAliasOnlyAfterOriginalHasNoAcceptedCandidate(t *testing.T) {
+	var queries []string
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		query := r.URL.Query().Get("query")
+		queries = append(queries, query)
+		body := `{"results":[]}`
+		if query == "Магеллан" {
+			body = `{"results":[{"id":2,"title":"Магеллан","original_title":"Magalhães","release_date":"2024-04-01"}]}`
+		}
+		return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+
+	got, err := NewTMDBClient(client, "https://tmdb.test", "secret").Enrich(context.Background(), Movie{
+		SearchAliases: []string{"Magellan", "Магеллан"}, SearchName: "Magellan", Year: "2024",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "2", got.ID)
+	require.Equal(t, []string{"Magellan", "Магеллан"}, queries)
+}
+
+func TestTMDBClientStopsAfterAcceptedOriginalAlias(t *testing.T) {
+	var attempts atomic.Int32
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		attempts.Add(1)
+		require.Equal(t, "Bad Boys", r.URL.Query().Get("query"))
+		return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(strings.NewReader(
+			`{"results":[{"id":9737,"title":"Bad Boys","original_title":"Bad Boys","release_date":"1995-04-07"}]}`,
+		))}, nil
+	})}
+
+	got, err := NewTMDBClient(client, "https://tmdb.test", "secret").Enrich(context.Background(), Movie{
+		SearchAliases: []string{"Bad Boys", "Плохие парни"}, SearchName: "Bad Boys", Year: "1995",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "9737", got.ID)
+	require.EqualValues(t, 1, attempts.Load())
+}
+
+func TestTMDBRetryDelayIsCappedAtFiveSeconds(t *testing.T) {
+	response := &http.Response{Header: http.Header{"Retry-After": []string{"60"}}}
+	require.Equal(t, 5*time.Second, tmdbRetryDelay(response, time.Second))
 }

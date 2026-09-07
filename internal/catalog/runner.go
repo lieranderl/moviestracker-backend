@@ -21,12 +21,23 @@ import (
 const maxFailureRatio = 0.5
 
 const (
-	trackerConcurrency  = 3
-	enricherConcurrency = 20
+	trackerConcurrency         = 3
+	defaultEnricherConcurrency = 10
+	maxEnricherConcurrency     = 20
 )
 
 type Tracker interface {
 	Fetch(context.Context, string, bool) ([]Torrent, error)
+}
+
+type TrackerBatch struct {
+	Fetched         int
+	RejectedParsing int
+	Torrents        []Torrent
+}
+
+type DiagnosticTracker interface {
+	FetchBatch(context.Context, string, bool) (TrackerBatch, error)
 }
 
 type TrackerFunc func(context.Context, string, bool) ([]Torrent, error)
@@ -44,19 +55,21 @@ type MovieRepository interface {
 }
 
 type RunConfig struct {
-	Collection Collection
-	URLs       []string
+	Collection          Collection
+	EnricherConcurrency int
+	URLs                []string
 }
 
 // Result reports what a run actually achieved, so the caller can log the counts
 // and a degraded run is visible rather than indistinguishable from a clean one.
 type Result struct {
-	EnrichFailed  int
-	Enriched      int
-	Grouped       int
-	SourcesFailed int
-	Stored        int
-	Torrents      int
+	Failed          int
+	Fetched         int
+	Grouped         int
+	RejectedParsing int
+	Resolved        int
+	Stored          int
+	Unresolved      int
 }
 
 type Runner struct {
@@ -76,6 +89,10 @@ func (r Runner) Run(ctx context.Context, config RunConfig) (Result, error) {
 	if len(config.URLs) == 0 {
 		return result, errors.New("at least one tracker URL is required")
 	}
+	concurrency, err := validatedEnricherConcurrency(config.EnricherConcurrency)
+	if err != nil {
+		return result, err
+	}
 
 	torrents, err := r.fetchAll(ctx, config, &result)
 	if err != nil {
@@ -85,7 +102,7 @@ func (r Runner) Run(ctx context.Context, config RunConfig) (Result, error) {
 	movies := GroupMovies(torrents)
 	result.Grouped = len(movies)
 
-	movies, err = r.enrichAll(ctx, movies, &result)
+	movies, err = r.enrichAll(ctx, movies, concurrency, &result)
 	if err != nil {
 		return result, err
 	}
@@ -112,21 +129,29 @@ func (r Runner) fetchAll(ctx context.Context, config RunConfig, result *Result) 
 	group.SetLimit(trackerConcurrency)
 	for _, trackerURL := range config.URLs {
 		group.Go(func() error {
-			torrents, err := r.Tracker.Fetch(ctx, trackerURL, false)
+			batch := TrackerBatch{}
+			var err error
+			if tracker, ok := r.Tracker.(DiagnosticTracker); ok {
+				batch, err = tracker.FetchBatch(ctx, trackerURL, false)
+			} else {
+				batch.Torrents, err = r.Tracker.Fetch(ctx, trackerURL, false)
+				batch.Fetched = len(batch.Torrents)
+			}
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
 				failures = append(failures, fmt.Errorf("fetch %s: %w", trackerURL, err))
 				return nil
 			}
-			all = append(all, torrents...)
+			all = append(all, batch.Torrents...)
+			result.Fetched += batch.Fetched
+			result.RejectedParsing += batch.RejectedParsing
 			return nil
 		})
 	}
 	_ = group.Wait()
 
-	result.SourcesFailed = len(failures)
-	result.Torrents = len(all)
+	result.Failed += len(failures)
 	if len(failures) == len(config.URLs) {
 		return nil, fmt.Errorf("every tracker source failed: %w", errors.Join(failures...))
 	}
@@ -141,9 +166,9 @@ func (r Runner) fetchAll(ctx context.Context, config RunConfig, result *Result) 
 
 // enrichAll resolves every grouped movie against the enricher and keeps the ones
 // that resolved. Individual failures are tolerated up to maxFailureRatio.
-func (r Runner) enrichAll(ctx context.Context, movies []Movie, result *Result) ([]Movie, error) {
+func (r Runner) enrichAll(ctx context.Context, movies []Movie, concurrency int, result *Result) ([]Movie, error) {
 	if r.Enricher == nil {
-		result.Enriched = len(movies)
+		result.Resolved = len(movies)
 		return movies, nil
 	}
 
@@ -151,7 +176,7 @@ func (r Runner) enrichAll(ctx context.Context, movies []Movie, result *Result) (
 	failures := make([]error, len(movies))
 
 	var group errgroup.Group
-	group.SetLimit(enricherConcurrency)
+	group.SetLimit(concurrency)
 	for index := range movies {
 		group.Go(func() error {
 			movie, err := r.Enricher.Enrich(ctx, movies[index])
@@ -176,8 +201,9 @@ func (r Runner) enrichAll(ctx context.Context, movies []Movie, result *Result) (
 		}
 	}
 
-	result.EnrichFailed = len(failed)
-	result.Enriched = len(resolved)
+	result.Failed += len(failed)
+	result.Resolved = len(resolved)
+	result.Unresolved = len(movies) - len(resolved) - len(failed)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -188,4 +214,14 @@ func (r Runner) enrichAll(ctx context.Context, movies []Movie, result *Result) (
 		slog.Warn("enrichment failed; movie skipped for this run", "error", err)
 	}
 	return resolved, nil
+}
+
+func validatedEnricherConcurrency(value int) (int, error) {
+	if value == 0 {
+		return defaultEnricherConcurrency, nil
+	}
+	if value < 1 || value > maxEnricherConcurrency {
+		return 0, fmt.Errorf("enricher concurrency must be between 1 and %d", maxEnricherConcurrency)
+	}
+	return value, nil
 }

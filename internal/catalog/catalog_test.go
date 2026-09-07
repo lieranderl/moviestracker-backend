@@ -27,6 +27,17 @@ func TestParseRutorHTMLReturnsStableMovieMetadata(t *testing.T) {
 	require.True(t, got[0].HDR10Plus)
 }
 
+func FuzzParseRutorHTML(f *testing.F) {
+	f.Add([]byte(`<table><tr class="gai"><td>06 Янв 24</td><td><a href="magnet:?xt=urn:btih:ABC">m</a><a>Фильм / Movie (2024)</a></td><td>1 GB 2 1</td></tr></table>`), false)
+	f.Add([]byte(`<html><broken`), true)
+	f.Fuzz(func(t *testing.T, input []byte, series bool) {
+		if len(input) > 1<<20 {
+			t.Skip()
+		}
+		_, _ = ParseRutorHTML(strings.NewReader(string(input)), series)
+	})
+}
+
 func TestRutorClientStopsBlockedRequestWhenContextIsCancelled(t *testing.T) {
 	started := make(chan struct{})
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -67,7 +78,21 @@ func TestGroupMoviesDeduplicatesAndKeepsNewestTimestamp(t *testing.T) {
 
 	require.Len(t, got, 1)
 	require.Equal(t, "Movie A", got[0].SearchName)
+	require.Equal(t, []string{"Movie A"}, got[0].SearchAliases)
 	require.Equal(t, torrents[1].Date, got[0].LastTimeFound)
+}
+
+func TestGroupMoviesKeepsOriginalThenDistinctRussianAlias(t *testing.T) {
+	got := GroupMovies([]Torrent{{
+		Hash: "movie-a", OriginalName: "The Movie", RussianName: "Фильм", Name: "ignored", Year: "2024",
+	}})
+
+	require.Len(t, got, 1)
+	require.Equal(t, []string{"The Movie", "Фильм"}, got[0].SearchAliases)
+	require.Equal(t, "The Movie", got[0].SearchName)
+
+	duplicate := GroupMovies([]Torrent{{Hash: "movie-b", OriginalName: "Same", RussianName: " same "}})
+	require.Equal(t, []string{"Same"}, duplicate[0].SearchAliases)
 }
 
 func TestRunnerPassesCallerContextToEveryBoundary(t *testing.T) {
@@ -100,8 +125,8 @@ func TestRunnerKeepsWorkingTrackerSourcesWhenOneFails(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, 1, result.SourcesFailed)
-	require.Equal(t, 2, result.Torrents)
+	require.Equal(t, 1, result.Failed)
+	require.Equal(t, 2, result.Fetched)
 	require.Equal(t, 2, result.Grouped)
 	require.Len(t, repository.saved, 2)
 }
@@ -146,8 +171,8 @@ func TestRunnerPersistsMoviesThatEnrichedWhenSomeFail(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, 10, result.Grouped)
-	require.Equal(t, 9, result.Enriched)
-	require.Equal(t, 1, result.EnrichFailed)
+	require.Equal(t, 9, result.Resolved)
+	require.Equal(t, 1, result.Failed)
 	require.Len(t, repository.saved, 9)
 	for _, movie := range repository.saved {
 		require.NotEqual(t, "Movie 3", movie.SearchName)
@@ -199,8 +224,9 @@ func TestRunnerDropsUnresolvedMoviesWithoutFailing(t *testing.T) {
 	result, err := runner.Run(context.Background(), RunConfig{Collection: CollectionLatest, URLs: []string{"https://one.test"}})
 
 	require.NoError(t, err)
-	require.Equal(t, 0, result.EnrichFailed)
-	require.Equal(t, 1, result.Enriched)
+	require.Equal(t, 0, result.Failed)
+	require.Equal(t, 1, result.Resolved)
+	require.Equal(t, 1, result.Unresolved)
 	require.Len(t, repository.saved, 1)
 	require.Equal(t, "42", repository.saved[0].ID)
 }
@@ -221,6 +247,29 @@ func TestRunnerReportsCancellationRatherThanPartialSuccess(t *testing.T) {
 
 	require.ErrorIs(t, err, context.Canceled)
 	require.Nil(t, repository.saved)
+}
+
+func TestRunnerValidatesEnricherConcurrency(t *testing.T) {
+	runner := Runner{Tracker: TrackerFunc(func(context.Context, string, bool) ([]Torrent, error) { return nil, nil })}
+	for _, value := range []int{-1, 21} {
+		_, err := runner.Run(context.Background(), RunConfig{
+			Collection: CollectionLatest, EnricherConcurrency: value, URLs: []string{"https://one.test"},
+		})
+		require.ErrorContains(t, err, "enricher concurrency")
+	}
+	require.Equal(t, 10, defaultEnricherConcurrency)
+	require.Equal(t, 20, maxEnricherConcurrency)
+}
+
+func TestParseRutorHTMLRejectsMalformedDateWithDiagnostics(t *testing.T) {
+	html := `<table><tr class="gai"><td>not-a-date</td><td><a href="magnet:?xt=urn:btih:5A64F87D68A7E4DF9F0E3F26B4E4C65C09D6FFAA">magnet</a><a href="/torrent/1">Фильм / Movie (2024) 2160p</a></td><td>12.5 GB 10 2</td></tr></table>`
+
+	batch, err := ParseRutorHTMLWithDiagnostics(strings.NewReader(html), false)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, batch.Fetched)
+	require.Equal(t, 1, batch.RejectedParsing)
+	require.Empty(t, batch.Torrents)
 }
 
 type enricherFunc func(context.Context, Movie) (Movie, error)

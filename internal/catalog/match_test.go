@@ -1,10 +1,71 @@
 package catalog
 
 import (
+	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestMatcherCheckedInCorpus(t *testing.T) {
+	type corpusCase struct {
+		Name       string      `json:"name"`
+		SearchName string      `json:"search_name"`
+		SearchYear string      `json:"search_year"`
+		Candidates []Candidate `json:"candidates"`
+		WantIndex  int         `json:"want_index"`
+	}
+	raw, err := os.ReadFile("testdata/matcher_corpus.json")
+	require.NoError(t, err)
+	var corpus []corpusCase
+	require.NoError(t, json.Unmarshal(raw, &corpus))
+	for _, test := range corpus {
+		t.Run(test.Name, func(t *testing.T) {
+			require.Equal(t, test.WantIndex, SelectCandidate(test.SearchName, test.SearchYear, test.Candidates))
+		})
+	}
+}
+
+func TestSecondAliasImprovesCapturedUnresolvedCorpus(t *testing.T) {
+	type corpusCase struct {
+		Name          string        `json:"name"`
+		Year          string        `json:"year"`
+		Aliases       []string      `json:"aliases"`
+		CandidateSets [][]Candidate `json:"candidate_sets"`
+		Resolved      bool          `json:"resolved"`
+	}
+	raw, err := os.ReadFile("testdata/unresolved_alias_corpus.json")
+	require.NoError(t, err)
+	var corpus []corpusCase
+	require.NoError(t, json.Unmarshal(raw, &corpus))
+	require.NotEmpty(t, corpus)
+
+	baselineResolved := 0
+	aliasResolved := 0
+	for _, test := range corpus {
+		resolvedWith := func(limit int) bool {
+			for index := 0; index < min(limit, len(test.Aliases), len(test.CandidateSets)); index++ {
+				if SelectCandidate(test.Aliases[index], test.Year, test.CandidateSets[index]) >= 0 {
+					return true
+				}
+			}
+			return false
+		}
+		baseline := resolvedWith(1)
+		improved := resolvedWith(2)
+		require.Equalf(t, test.Resolved, improved, "case %q", test.Name)
+		if baseline {
+			baselineResolved++
+		}
+		if improved {
+			aliasResolved++
+		}
+	}
+
+	gain := float64(aliasResolved-baselineResolved) / float64(len(corpus))
+	require.GreaterOrEqual(t, gain, 0.05, "second-alias resolution gain must be at least five percentage points")
+}
 
 // These cases are the real TMDB responses for releases the previous matcher
 // discarded. They were captured by querying TMDB with the scraped name and year

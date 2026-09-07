@@ -53,8 +53,23 @@ type Index struct {
 	overflow map[string]Rating
 }
 
+type ParseStats struct {
+	CompactRows  int
+	InputOrdered bool
+	OverflowRows int
+	SortApplied  bool
+}
+
 func ParseRatings(reader io.Reader) (*Index, error) {
+	index, _, err := ParseRatingsWithStats(reader)
+	return index, err
+}
+
+func ParseRatingsWithStats(reader io.Reader) (*Index, ParseStats, error) {
 	index := &Index{entries: make([]entry, 0, expectedRatingRows)}
+	stats := ParseStats{InputOrdered: true}
+	var previousID uint32
+	hasPrevious := false
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -64,13 +79,28 @@ func ParseRatings(reader io.Reader) (*Index, error) {
 		if !ok || bytes.Equal(id, []byte("tconst")) {
 			continue
 		}
+		beforeCompact := len(index.entries)
 		index.add(id, rating, votes)
+		if len(index.entries) > beforeCompact {
+			currentID := index.entries[len(index.entries)-1].id
+			if hasPrevious && currentID < previousID {
+				stats.InputOrdered = false
+			}
+			previousID = currentID
+			hasPrevious = true
+			stats.CompactRows++
+		} else {
+			stats.OverflowRows++
+		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan IMDb ratings: %w", err)
+		return nil, stats, fmt.Errorf("scan IMDb ratings: %w", err)
 	}
-	slices.SortFunc(index.entries, func(a, b entry) int { return cmp.Compare(a.id, b.id) })
-	return index, nil
+	if !stats.InputOrdered {
+		slices.SortFunc(index.entries, func(a, b entry) int { return cmp.Compare(a.id, b.id) })
+		stats.SortApplied = true
+	}
+	return index, stats, nil
 }
 
 // splitRatingRow splits a tab-separated row into exactly three fields.

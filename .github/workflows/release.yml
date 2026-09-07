@@ -28,6 +28,8 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go test -race ./...
+      - run: go test ./internal/catalog -run ^ -fuzz FuzzParseRutorHTML -fuzztime 5s
+      - run: go test ./internal/imdb -run ^ -fuzz FuzzParseRatings -fuzztime 5s
       - run: go vet ./...
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
@@ -146,16 +148,24 @@ jobs:
           gcloud run jobs execute getmovies-hdr10movies-job --project="$GCP_PROJECT" --region="$GCP_REGION" --wait
           gcloud run jobs execute getmovies-dvmovies-job --project="$GCP_PROJECT" --region="$GCP_REGION" --wait
           gcloud run jobs execute downloadimdbdata-job --project="$GCP_PROJECT" --region="$GCP_REGION" --wait
-      - name: Smoke IMDb gateway
+      - name: Smoke private IMDb service and fallback gateway
         env:
           API_GATEWAY_URL: ${{ vars.API_GATEWAY_URL }}
         run: |
-          api_key="$(gcloud secrets versions access latest --secret=GC_API_KEY --project="$GCP_PROJECT")"
+          service_url="$(gcloud run services describe get-imdb-rating-service --project="$GCP_PROJECT" --region="$GCP_REGION" --format='value(status.url)')"
+          identity_token="$(gcloud auth print-identity-token --audiences="$service_url")"
           curl --fail --show-error --silent \
-            --header "x-api-key: ${api_key}" \
-            --header "Referer: https://moviestracker.net/" \
-            "${API_GATEWAY_URL}/getimdb?imdb_id=tt0133093" \
+            --header "Authorization: Bearer ${identity_token}" \
+            "${service_url}/getimdb?imdb_id=tt0133093" \
             | jq -e '.Id == "tt0133093"'
+
+          if api_key="$(gcloud secrets versions access latest --secret=GC_API_KEY --project="$GCP_PROJECT" 2>/dev/null)"; then
+            curl --fail --show-error --silent \
+              --header "x-api-key: ${api_key}" \
+              --header "Referer: https://moviestracker.net/" \
+              "${API_GATEWAY_URL}/getimdb?imdb_id=tt0133093" \
+              | jq -e '.Id == "tt0133093"'
+          fi
       - name: Roll back workload images on failure
         if: failure()
         run: |

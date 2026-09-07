@@ -51,6 +51,7 @@ type Movie struct {
 	OriginalTitle string    `firestore:"original_title" json:"original_title"`
 	PosterPath    string    `firestore:"poster_path" json:"poster_path"`
 	ReleaseDate   string    `firestore:"release_date" json:"release_date"`
+	SearchAliases []string  `firestore:"-" json:"-"`
 	SearchName    string    `firestore:"-" json:"-"`
 	Title         string    `firestore:"title" json:"title"`
 	VoteAverage   string    `firestore:"vote_average" json:"vote_average"`
@@ -68,9 +69,14 @@ func GroupMovies(torrents []Torrent) []Movie {
 		}
 		movie, exists := grouped[key]
 		if !exists {
+			aliases := distinctNonEmpty(torrent.OriginalName, torrent.RussianName)
+			if len(aliases) == 0 {
+				aliases = distinctNonEmpty(torrent.Name)
+			}
 			movie = Movie{
-				SearchName: firstNonEmpty(torrent.OriginalName, torrent.RussianName, torrent.Name),
-				Year:       torrent.Year,
+				SearchAliases: aliases,
+				SearchName:    firstNonEmpty(aliases...),
+				Year:          torrent.Year,
 			}
 			order = append(order, key)
 		}
@@ -85,6 +91,27 @@ func GroupMovies(torrents []Torrent) []Movie {
 		movies = append(movies, grouped[key])
 	}
 	return movies
+}
+
+func distinctNonEmpty(values ...string) []string {
+	result := make([]string, 0, min(2, len(values)))
+	seen := make(map[string]struct{}, 2)
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		key := strings.ToLower(value)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, value)
+		if len(result) == 2 {
+			break
+		}
+	}
+	return result
 }
 
 func firstNonEmpty(values ...string) string {

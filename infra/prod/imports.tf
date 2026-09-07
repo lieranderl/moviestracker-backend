@@ -41,11 +41,24 @@ import {
 }
 
 import {
-  to = google_api_gateway_api.movies
-  id = "projects/moviestracker-f07e2/locations/global/apis/moviestracker"
+  for_each = var.enable_gateway_fallback ? toset(["active"]) : toset([])
+  to       = google_api_gateway_api.movies[0]
+  id       = "projects/moviestracker-f07e2/locations/global/apis/moviestracker"
 }
 
 import {
-  to = google_api_gateway_gateway.movies
-  id = "projects/moviestracker-f07e2/locations/europe-west1/gateways/moviestracker-gw-eu-w1"
+  for_each = var.enable_gateway_fallback ? toset(["active"]) : toset([])
+  to       = google_api_gateway_gateway.movies[0]
+  id       = "projects/moviestracker-f07e2/locations/europe-west1/gateways/moviestracker-gw-eu-w1"
+}
+
+import {
+  to = google_cloud_run_v2_service.frontend
+  id = "projects/moviestracker-f07e2/locations/europe-west1/services/moviestracker-app"
+}
+
+import {
+  for_each = local.frontend_secret_ids
+  to       = google_secret_manager_secret.frontend[each.key]
+  id       = "projects/moviestracker-f07e2/secrets/${each.key}"
 }

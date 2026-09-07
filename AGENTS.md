@@ -5,7 +5,7 @@ Run workloads in GCP project `moviestracker-f07e2`, region `europe-west1`.
 
 ```
 cmd/getmovies          Rutor -> TMDB -> Firestore catalog job (arg: collection)
-cmd/getimdbrating      constant-time IMDb rating HTTP service (behind API Gateway)
+cmd/getimdbrating      constant-time IAM-private IMDb rating HTTP service
 cmd/downloadimdbdata   IMDb archive -> Cloud Storage refresh job
 internal/catalog       scraping, parsing, TMDB enrichment, pipeline orchestration
 internal/imdb          ratings index, snapshot manager, download, HTTP handler
@@ -44,11 +44,12 @@ infra/prod             all production resources (GCS-backed state)
 Changing any of these breaks a live consumer. Treat as frozen unless the task
 explicitly says otherwise.
 
-- `GET /getimdb?imdb_id=tt<digits>` returning JSON keys `Id`, `Rating`, `Votes`
-  (all strings). Status codes: 200, 400 invalid id, 404 unknown id.
-- API Gateway `moviestracker-gw-eu-w1` fronts the service. Access needs an API
-  key **and** a `Referer` of `moviestracker.net` or `localhost`; the key is
-  browser-referrer restricted, so `curl` without `Referer` returns 403.
+- Internal `GET /getimdb?imdb_id=tt<digits>` returns JSON keys `Id`, `Rating`,
+  `Votes` (all strings). Status codes: 200, 400 invalid id, 404 unknown id.
+  Callers authenticate to the private Cloud Run service with a Google ID token.
+- API Gateway is a temporary, feature-flagged release fallback. It and
+  `GC_API_KEY` must be removed after the documented healthy observation window;
+  do not add new public consumers.
 - Firestore collections `latesttorrentsmovies`, `hdr10movies`, `dvmovies` and
   the document field names in `internal/catalog.Movie` firestore tags,
   including the irregular `Year` key.
@@ -68,11 +69,10 @@ Do not "clean them up" without re-verifying.
   performance measure.
 - **`min_instance_count` stays 0 by decision** (cost). Any freshness mechanism
   must work on the request path, not in a background goroutine.
-- **The frontend still mounts `MONGO_URI`** and runs as the *default compute*
-  service account, which holds project-wide `roles/editor`. The `movies-app@`
-  identity that `infra/prod/iam.tf` creates is currently unused. Do not delete
-  the MongoDB or Firebase secrets, and do not assume `movies-app@` is wired up;
-  both are frontend-repo concerns that must be coordinated first.
+- OpenTofu declares the frontend on the dedicated `movies-app@` identity with
+  least-privilege Firestore, Secret Manager, and IMDb Cloud Run access. Legacy
+  MongoDB and Firebase secrets are retained behind the explicit retirement flag
+  but are no longer mounted by the frontend service.
 - Firestore queries order on `lasttimefound`. Other `Movie` fields are not
   filtered or ordered on, so they are candidates for single-field index
   exemptions.
@@ -98,9 +98,9 @@ Do not "clean them up" without re-verifying.
   alone previously cost ~30 MiB per refresh.
 - `get-imdb-rating-service` runs with `cpu_idle = true` (CPU only during
   requests) and `min_instance_count = 0`. Background goroutines are therefore
-  **not reliably scheduled**. Freshness runs on the request path instead, via
-  `imdb.Refresher` (`internal/imdb/refresh.go`), which checks at most once per
-  interval and never concurrently. Do not reintroduce a `time.Ticker` here
+  **not reliably scheduled**. The downloader invokes authenticated
+  `POST /internal/refresh` after publishing a generation; request-path refresh
+  remains the coalesced fallback. Do not reintroduce a `time.Ticker` here
   without also disabling `cpu_idle` and accepting the cost.
 
 ## Verification
@@ -117,10 +117,10 @@ make test race cover vet lint vuln build
   emulator is absent.
 - If a change plausibly affects memory or throughput, add a benchmark or a
   measurement and report the numbers rather than asserting improvement.
-- Log-based metrics in `infra/prod/monitoring.tf` match on log **text**
-  (`"catalog job completed"`, `"IMDb ratings updated"`,
-  `"IMDb index refresh failed"`). Changing those strings or moving to a JSON
-  slog handler breaks the alerts. Update `monitoring.tf` in the same change.
+- Operational commands use JSON `slog`. Log-based metrics in
+  `infra/prod/monitoring.tf` match stable `jsonPayload.event` fields and catalog
+  diagnostic fields. Update code and metric filters atomically when changing
+  those event contracts.
 
 ## Delivery
 
@@ -151,9 +151,8 @@ make test race cover vet lint vuln build
   more than `maxFailureRatio` of lookups failed (`internal/catalog/runner.go`).
   Do not reintroduce `errgroup.WithContext` there; cancelling siblings on the
   first error is what previously turned one bad page into a lost run.
-- This repo has known open defects that are documented but not yet fixed
-  (no alert on a partially degraded catalog run, GitHub attestations and
-  reviewer gate unavailable on this plan). Do not silently "fix" adjacent code
+- GitHub attestations and the reviewer gate remain unavailable on the current
+  repository/billing plan. Do not silently change adjacent delivery controls
   while doing an unrelated task; keep changes scoped and mention what you
   noticed.
 - Prefer the standard library. The dependency set is deliberately small:

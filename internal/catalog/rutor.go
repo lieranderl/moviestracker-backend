@@ -29,35 +29,47 @@ func NewRutorClient(client *http.Client) *RutorClient {
 }
 
 func (c *RutorClient) Fetch(ctx context.Context, rawURL string, isSeries bool) ([]Torrent, error) {
+	batch, err := c.FetchBatch(ctx, rawURL, isSeries)
+	return batch.Torrents, err
+}
+
+func (c *RutorClient) FetchBatch(ctx context.Context, rawURL string, isSeries bool) (TrackerBatch, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("build rutor request: %w", err)
+		return TrackerBatch{}, fmt.Errorf("build rutor request: %w", err)
 	}
 	req.Header.Set("User-Agent", "MoviesTracker/2.0 (+https://moviestracker.net)")
 	resp, err := c.client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return TrackerBatch{}, ctx.Err()
 		}
-		return nil, fmt.Errorf("fetch rutor: %w", err)
+		return TrackerBatch{}, fmt.Errorf("fetch rutor: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetch rutor: unexpected status %s", resp.Status)
+		return TrackerBatch{}, fmt.Errorf("fetch rutor: unexpected status %s", resp.Status)
 	}
-	return ParseRutorHTML(resp.Body, isSeries)
+	return ParseRutorHTMLWithDiagnostics(resp.Body, isSeries)
 }
 
 func ParseRutorHTML(reader io.Reader, isSeries bool) ([]Torrent, error) {
+	batch, err := ParseRutorHTMLWithDiagnostics(reader, isSeries)
+	return batch.Torrents, err
+}
+
+func ParseRutorHTMLWithDiagnostics(reader io.Reader, isSeries bool) (TrackerBatch, error) {
 	doc, err := goquery.NewDocumentFromReader(reader)
 	if err != nil {
-		return nil, fmt.Errorf("parse rutor html: %w", err)
+		return TrackerBatch{}, fmt.Errorf("parse rutor html: %w", err)
 	}
 
-	result := make([]Torrent, 0)
+	batch := TrackerBatch{Torrents: make([]Torrent, 0)}
 	doc.Find("tr.gai, tr.tum").Each(func(_ int, row *goquery.Selection) {
 		cells := row.Find("td")
 		if cells.Length() < 3 {
+			batch.Fetched++
+			batch.RejectedParsing++
 			return
 		}
 		links := cells.Eq(1).Find("a")
@@ -66,10 +78,14 @@ func ParseRutorHTML(reader io.Reader, isSeries bool) ([]Torrent, error) {
 			return strings.HasPrefix(strings.ToLower(href), "magnet:")
 		}).First().Attr("href")
 		if !exists {
+			batch.Fetched++
+			batch.RejectedParsing++
 			return
 		}
 		hashMatch := btihPattern.FindStringSubmatch(magnet)
 		if len(hashMatch) != 2 {
+			batch.Fetched++
+			batch.RejectedParsing++
 			return
 		}
 		titleLink := links.FilterFunction(func(_ int, link *goquery.Selection) bool {
@@ -77,14 +93,25 @@ func ParseRutorHTML(reader io.Reader, isSeries bool) ([]Torrent, error) {
 			return href != "" && !strings.HasPrefix(strings.ToLower(href), "magnet:")
 		}).Last()
 		title := strings.TrimSpace(titleLink.Text())
-		if title == "" || isSeries != strings.Contains(title, "[") {
+		if title == "" {
+			batch.Fetched++
+			batch.RejectedParsing++
 			return
 		}
+		if isSeries != strings.Contains(title, "[") {
+			return
+		}
+		batch.Fetched++
 
 		torrent := parseRutorTitle(title)
 		torrent.Magnet = magnet
 		torrent.MagnetHash = hashMatch[1]
-		torrent.Date = parseRutorDate(strings.TrimSpace(cells.Eq(0).Text()))
+		date, dateErr := parseRutorDate(strings.TrimSpace(cells.Eq(0).Text()))
+		if dateErr != nil {
+			batch.RejectedParsing++
+			return
+		}
+		torrent.Date = date
 		if href, ok := titleLink.Attr("href"); ok {
 			if parsed, parseErr := url.Parse(href); parseErr == nil {
 				torrent.DetailsURL = (&url.URL{Scheme: "https", Host: "rutor.is"}).ResolveReference(parsed).String()
@@ -92,9 +119,9 @@ func ParseRutorHTML(reader io.Reader, isSeries bool) ([]Torrent, error) {
 		}
 		parseSizePeers(strings.TrimSpace(cells.Eq(2).Text()), &torrent)
 		torrent.Hash = movieHash(torrent)
-		result = append(result, torrent)
+		batch.Torrents = append(batch.Torrents, torrent)
 	})
-	return result, nil
+	return batch, nil
 }
 
 func parseRutorTitle(title string) Torrent {
@@ -125,22 +152,26 @@ func parseRutorTitle(title string) Torrent {
 	return torrent
 }
 
-func parseRutorDate(raw string) time.Time {
+func parseRutorDate(raw string) (time.Time, error) {
 	fields := strings.Fields(raw)
 	if len(fields) < 3 {
-		return time.Now().UTC()
+		return time.Time{}, fmt.Errorf("invalid tracker date %q", raw)
 	}
 	months := map[string]time.Month{"янв": time.January, "фев": time.February, "мар": time.March, "апр": time.April, "май": time.May, "июн": time.June, "июл": time.July, "авг": time.August, "сен": time.September, "окт": time.October, "ноя": time.November, "дек": time.December}
 	day, dayErr := strconv.Atoi(fields[0])
 	year, yearErr := strconv.Atoi(fields[2])
 	month, ok := months[strings.ToLower(fields[1])]
 	if dayErr != nil || yearErr != nil || !ok {
-		return time.Now().UTC()
+		return time.Time{}, fmt.Errorf("invalid tracker date %q", raw)
 	}
 	if year < 100 {
 		year += 2000
 	}
-	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+	parsed := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+	if parsed.Day() != day || parsed.Month() != month || parsed.Year() != year {
+		return time.Time{}, fmt.Errorf("invalid tracker date %q", raw)
+	}
+	return parsed, nil
 }
 
 func parseSizePeers(raw string, torrent *Torrent) {

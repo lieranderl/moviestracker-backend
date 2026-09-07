@@ -15,18 +15,21 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/lieranderl/moviestracker-backend/internal/imdb"
 	gcsstore "github.com/lieranderl/moviestracker-backend/internal/platform/gcs"
+	"google.golang.org/api/idtoken"
 )
 
 const defaultDownloadTimeout = 5 * time.Minute
 
 type config struct {
-	bucket    string
-	object    string
-	sourceURL string
-	timeout   time.Duration
+	bucket         string
+	imdbServiceURL string
+	object         string
+	sourceURL      string
+	timeout        time.Duration
 }
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx, os.Getenv); err != nil {
@@ -59,7 +62,36 @@ func run(parent context.Context, getenv func(string) string) error {
 	if err := (gcsstore.RatingsStore{Bucket: config.bucket, Client: client, Object: config.object}).Put(ctx, archive); err != nil {
 		return err
 	}
-	slog.Info("IMDb ratings updated", "bytes", len(archive), "object", config.object)
+	if config.imdbServiceURL != "" {
+		authenticatedClient, err := idtoken.NewClient(ctx, config.imdbServiceURL)
+		if err != nil {
+			return fmt.Errorf("create IMDb refresh identity client: %w", err)
+		}
+		if err := notifyRefresh(ctx, authenticatedClient, config.imdbServiceURL); err != nil {
+			return err
+		}
+	}
+	slog.Info("IMDb ratings updated",
+		"event", "imdb_ratings_updated",
+		"bytes", len(archive),
+		"object", config.object,
+	)
+	return nil
+}
+
+func notifyRefresh(ctx context.Context, client *http.Client, serviceURL string) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(serviceURL, "/")+"/internal/refresh", nil)
+	if err != nil {
+		return fmt.Errorf("build IMDb refresh request: %w", err)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return fmt.Errorf("invoke IMDb refresh: %w", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("invoke IMDb refresh: unexpected status %s", response.Status)
+	}
 	return nil
 }
 
@@ -80,5 +112,11 @@ func loadConfig(getenv func(string) string) (config, error) {
 	if parsed, err := time.ParseDuration(strings.TrimSpace(getenv("JOB_TIMEOUT"))); err == nil && parsed > 0 {
 		timeout = parsed
 	}
-	return config{bucket: bucket, object: object, sourceURL: sourceURL, timeout: timeout}, nil
+	return config{
+		bucket:         bucket,
+		imdbServiceURL: strings.TrimRight(strings.TrimSpace(getenv("IMDB_SERVICE_URL")), "/"),
+		object:         object,
+		sourceURL:      sourceURL,
+		timeout:        timeout,
+	}, nil
 }

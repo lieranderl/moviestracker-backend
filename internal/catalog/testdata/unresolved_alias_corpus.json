@@ -1,0 +1,37 @@
+[
+  {
+    "name": "Magellan localized fallback",
+    "year": "2025",
+    "aliases": ["Magellan", "Магеллан"],
+    "candidate_sets": [[], [{"original_title":"Magalhães","title":"Магеллан","release_year":"2025","rank":0}]],
+    "resolved": true
+  },
+  {
+    "name": "Yip Man localized fallback",
+    "year": "2008",
+    "aliases": ["Yip Man", "Ип Ман"],
+    "candidate_sets": [[], [{"original_title":"葉問","title":"Ип Ман","release_year":"2008","rank":0}]],
+    "resolved": true
+  },
+  {
+    "name": "unknown release remains unresolved",
+    "year": "2025",
+    "aliases": ["Unknown Release", "Неизвестный релиз"],
+    "candidate_sets": [[], []],
+    "resolved": false
+  },
+  {
+    "name": "distant remake remains unresolved",
+    "year": "2021",
+    "aliases": ["Dune", "Дюна"],
+    "candidate_sets": [[{"original_title":"Dune","title":"Дюна","release_year":"1984","rank":0}], []],
+    "resolved": false
+  },
+  {
+    "name": "short common prefix with adjacent year remains unresolved",
+    "year": "2024",
+    "aliases": ["The Cut", "Разрез"],
+    "candidate_sets": [[{"original_title":"The Cutting Edge","title":"The Cutting Edge","release_year":"2025","rank":0}], []],
+    "resolved": false
+  }
+]

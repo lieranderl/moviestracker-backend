@@ -25,6 +25,7 @@ type config struct {
 }
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx, os.Getenv); err != nil {
@@ -63,6 +64,7 @@ func run(ctx context.Context, getenv func(string) string) error {
 	fresh := refresher.Middleware(handler)
 	mux.Handle("GET /getimdb", fresh)
 	mux.Handle("GET /", fresh)
+	mux.Handle("POST /internal/refresh", imdb.NewRefreshHandler(refresher))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
 		if manager.Generation() == 0 {
