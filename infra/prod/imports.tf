@@ -41,18 +41,6 @@ import {
 }
 
 import {
-  for_each = var.enable_gateway_fallback ? toset(["active"]) : toset([])
-  to       = google_api_gateway_api.movies[0]
-  id       = "projects/moviestracker-f07e2/locations/global/apis/moviestracker"
-}
-
-import {
-  for_each = var.enable_gateway_fallback ? toset(["active"]) : toset([])
-  to       = google_api_gateway_gateway.movies[0]
-  id       = "projects/moviestracker-f07e2/locations/europe-west1/gateways/moviestracker-gw-eu-w1"
-}
-
-import {
   to = google_cloud_run_v2_service.frontend
   id = "projects/moviestracker-f07e2/locations/europe-west1/services/moviestracker-app"
 }

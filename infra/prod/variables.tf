@@ -47,12 +47,6 @@ variable "google_oauth_client_id" {
   sensitive = true
 }
 
-variable "enable_gateway_fallback" {
-  description = "Keep the legacy IMDb API Gateway key wired for one healthy release cycle."
-  type        = bool
-  default     = true
-}
-
 variable "rutor_urls" {
   description = "Comma-separated Rutor source URLs per Firestore collection."
   type = object({
@@ -68,30 +62,8 @@ variable "alert_email" {
   default = ""
 }
 
-variable "api_gateway_config_id" {
-  type    = string
-  default = "firestore-v1"
-}
-
 variable "retire_backend_legacy_resources" {
   description = "Destroy the imported torrent service and Kinozal secret during the backend cutover."
   type        = bool
   default     = true
-}
-
-variable "retire_frontend_legacy_resources" {
-  description = "Destroy imported MongoDB and Firebase secrets after the Firestore/JWT frontend is live."
-  type        = bool
-  default     = false
-}
-
-variable "frontend_legacy_secret_ids" {
-  type = set(string)
-  default = [
-    "FIREBASEADMIN_CONFIG",
-    "MONGO_INITDB_ROOT_PASSWORD",
-    "MONGO_INITDB_ROOT_USERNAME",
-    "MONGO_URI",
-    "VITE_FIREBASE_CONFIG",
-  ]
 }

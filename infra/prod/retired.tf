@@ -30,17 +30,3 @@ resource "google_secret_manager_secret" "retired_kinozal" {
     ignore_changes = all
   }
 }
-
-resource "google_secret_manager_secret" "retired_frontend" {
-  for_each = var.retire_frontend_legacy_resources ? toset([]) : var.frontend_legacy_secret_ids
-
-  project   = var.project_id
-  secret_id = each.value
-  replication {
-    auto {}
-  }
-
-  lifecycle {
-    ignore_changes = all
-  }
-}

@@ -47,9 +47,9 @@ explicitly says otherwise.
 - Internal `GET /getimdb?imdb_id=tt<digits>` returns JSON keys `Id`, `Rating`,
   `Votes` (all strings). Status codes: 200, 400 invalid id, 404 unknown id.
   Callers authenticate to the private Cloud Run service with a Google ID token.
-- API Gateway is a temporary, feature-flagged release fallback. It and
-  `GC_API_KEY` must be removed after the documented healthy observation window;
-  do not add new public consumers.
+- API Gateway and `GC_API_KEY` are retired. The IAM-private Cloud Run contract
+  is the only supported IMDb path; do not restore the public gateway, API-key
+  authentication, or new public consumers.
 - Firestore collections `latesttorrentsmovies`, `hdr10movies`, `dvmovies` and
   the document field names in `internal/catalog.Movie` firestore tags,
   including the irregular `Year` key.
@@ -64,6 +64,11 @@ Do not "clean them up" without re-verifying.
   `movies-catalog-jobs@`. `TMDB_API_KEY` is the *frontend* key, consumed by the
   `moviestracker-app` Cloud Run service. They are not duplicates. Deleting
   either breaks a live workload.
+- **The complete production Secret Manager inventory is four secrets:**
+  `AUTH_SECRET`, `GOOGLE_SECRET`, `TMDB_API_KEY`, and `TMDBAPIKEY`.
+  `GC_API_KEY`, Firebase configuration secrets, and the legacy Cloud Build
+  GitHub OAuth token are retired and must not be recreated. Any remaining
+  source, workflow, state, or OpenTofu reference is cleanup debt.
 - **`/getimdb` is called by Qwik SSR, not by browsers.** Response caching
   headers (`Cache-Control`, `ETag`) therefore buy nothing; do not add them as a
   performance measure.
@@ -71,8 +76,8 @@ Do not "clean them up" without re-verifying.
   must work on the request path, not in a background goroutine.
 - OpenTofu declares the frontend on the dedicated `movies-app@` identity with
   least-privilege Firestore, Secret Manager, and IMDb Cloud Run access. Legacy
-  MongoDB and Firebase secrets are retained behind the explicit retirement flag
-  but are no longer mounted by the frontend service.
+  MongoDB, Firebase, API Gateway, and gateway-secret resources must converge to
+  the retired state and must not be restored by a future apply.
 - Firestore queries order on `lasttimefound`. Other `Movie` fields are not
   filtered or ordered on, so they are candidates for single-field index
   exemptions.
