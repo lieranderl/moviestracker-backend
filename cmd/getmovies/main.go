@@ -72,8 +72,8 @@ func run(parent context.Context, args []string, getenv func(string) string) erro
 	if err != nil {
 		return fmt.Errorf("run catalog pipeline: %w", err)
 	}
-	// "catalog job completed" is matched by the log-based metric in
-	// infra/prod/monitoring.tf; do not reword it without updating that filter.
+	// The event field is matched by the log-based metric in
+	// infra/prod/monitoring.tf; update both atomically if the contract changes.
 	slog.Info("catalog pipeline completed",
 		"event", "catalog_pipeline_completed",
 		"collection", config.collection,
