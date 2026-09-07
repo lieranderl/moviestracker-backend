@@ -184,15 +184,6 @@ resource "google_cloud_run_v2_service_iam_member" "frontend_public_invoker" {
   member   = "allUsers"
 }
 
-resource "google_cloud_run_v2_service_iam_member" "gateway_invoker" {
-  count    = var.enable_gateway_fallback ? 1 : 0
-  project  = var.project_id
-  location = var.region
-  name     = google_cloud_run_v2_service.imdb.name
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.gateway[0].email}"
-}
-
 resource "google_cloud_run_v2_service_iam_member" "app_imdb_invoker" {
   project  = var.project_id
   location = var.region

@@ -30,15 +30,13 @@ the immutable image revision and traffic; OpenTofu owns runtime settings.
    stay unmanaged until the Firestore/JWT frontend has been deployed and
    verified.
 
-6. After frontend cutover, import its legacy secrets with
-   `retire_frontend_legacy_resources=false`, then review a plan with
-   `retire_frontend_legacy_resources=true` before deleting them.
+6. Frontend MongoDB and Firebase secrets are retired and absent from
+   OpenTofu. Do not import or recreate them.
 
 The Qwik service calls the IAM-private IMDb service directly with a Google ID
-token and the `movies-app` service account as invoker. The gateway remains only
-while `enable_gateway_fallback=true`. Keep it for at least seven healthy days or
-one normal release cycle, whichever is longer, then set the flag to `false`;
-the reviewed plan removes the gateway, gateway identity, and `GC_API_KEY`.
+token and the `movies-app` service account as invoker. API Gateway and
+`GC_API_KEY` are retired and absent from OpenTofu. Do not recreate either.
+Gateway deletion must use a saved, reviewed production plan.
 The downloader invokes `POST /internal/refresh` with its workload identity after
 publishing a new IMDb generation.
 
