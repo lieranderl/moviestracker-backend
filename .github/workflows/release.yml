@@ -148,15 +148,30 @@ jobs:
           gcloud run jobs execute getmovies-hdr10movies-job --project="$GCP_PROJECT" --region="$GCP_REGION" --wait
           gcloud run jobs execute getmovies-dvmovies-job --project="$GCP_PROJECT" --region="$GCP_REGION" --wait
           gcloud run jobs execute downloadimdbdata-job --project="$GCP_PROJECT" --region="$GCP_REGION" --wait
+      - name: Resolve private IMDb service URL
+        id: imdb-service
+        run: |
+          service_url="$(gcloud run services describe get-imdb-rating-service --project="$GCP_PROJECT" --region="$GCP_REGION" --format='value(status.url)')"
+          echo "url=${service_url}" >> "$GITHUB_OUTPUT"
+      - name: Mint audience-bound IMDb identity token
+        id: imdb-auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_ID_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          token_format: id_token
+          id_token_audience: ${{ steps.imdb-service.outputs.url }}
+          create_credentials_file: false
+          export_environment_variables: false
       - name: Smoke private IMDb service and fallback gateway
         env:
           API_GATEWAY_URL: ${{ vars.API_GATEWAY_URL }}
+          IDENTITY_TOKEN: ${{ steps.imdb-auth.outputs.id_token }}
+          IMDB_SERVICE_URL: ${{ steps.imdb-service.outputs.url }}
         run: |
-          service_url="$(gcloud run services describe get-imdb-rating-service --project="$GCP_PROJECT" --region="$GCP_REGION" --format='value(status.url)')"
-          identity_token="$(gcloud auth print-identity-token --audiences="$service_url")"
           curl --fail --show-error --silent \
-            --header "Authorization: Bearer ${identity_token}" \
-            "${service_url}/getimdb?imdb_id=tt0133093" \
+            --header "Authorization: Bearer ${IDENTITY_TOKEN}" \
+            "${IMDB_SERVICE_URL}/getimdb?imdb_id=tt0133093" \
             | jq -e '.Id == "tt0133093"'
 
           if api_key="$(gcloud secrets versions access latest --secret=GC_API_KEY --project="$GCP_PROJECT" 2>/dev/null)"; then
