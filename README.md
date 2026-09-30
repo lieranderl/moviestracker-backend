@@ -58,6 +58,8 @@ for integration tests; no database credential is supported.
 
 Copy `.env.example` to `.env` for local use. Required production secrets live
 in Secret Manager and are attached only to the workload that needs them.
+`TMDBAPIKEY` contains the TMDB API Read Access Token; catalog jobs send it in
+the `Authorization: Bearer <token>` header.
 Catalog enrichment concurrency defaults to 10 and is capped at 20 through
 `ENRICHER_CONCURRENCY`.
 

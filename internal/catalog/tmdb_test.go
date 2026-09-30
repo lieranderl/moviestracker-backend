@@ -15,12 +15,13 @@ import (
 func TestTMDBClientEnrichesMatchingMovie(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		require.Equal(t, "/search/movie", r.URL.Path)
-		require.Equal(t, "secret", r.URL.Query().Get("api_key"))
+		require.Equal(t, "Bearer secret", r.Header.Get("Authorization"))
+		require.False(t, r.URL.Query().Has("api_key"))
 		require.Equal(t, "Bad Boys", r.URL.Query().Get("query"))
 		return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(strings.NewReader(`{"results":[{"id":9737,"title":"Плохие парни","original_title":"Bad Boys","release_date":"1995-04-07","backdrop_path":"/b.jpg","poster_path":"/p.jpg","genre_ids":[28,35],"vote_average":6.8,"vote_count":6200}]}`))}, nil
 	})}
 
-	tmdb := NewTMDBClient(client, "https://tmdb.test", "secret")
+	tmdb := NewTMDBClient(client, "https://tmdb.test", " secret ")
 	got, err := tmdb.Enrich(context.Background(), Movie{SearchName: "Bad Boys", Year: "1995"})
 
 	require.NoError(t, err)
@@ -31,7 +32,9 @@ func TestTMDBClientEnrichesMatchingMovie(t *testing.T) {
 
 func TestTMDBClientRetriesRateLimit(t *testing.T) {
 	var attempts atomic.Int32
-	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		require.Equal(t, "Bearer secret", r.Header.Get("Authorization"))
+		require.False(t, r.URL.Query().Has("api_key"))
 		if attempts.Add(1) == 1 {
 			return &http.Response{
 				StatusCode: http.StatusTooManyRequests,

@@ -15,19 +15,19 @@ import (
 const defaultTMDBBaseURL = "https://api.themoviedb.org/3"
 
 type TMDBClient struct {
-	apiKey  string
-	baseURL string
-	client  *http.Client
+	accessToken string
+	baseURL     string
+	client      *http.Client
 }
 
-func NewTMDBClient(client *http.Client, baseURL, apiKey string) *TMDBClient {
+func NewTMDBClient(client *http.Client, baseURL, accessToken string) *TMDBClient {
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
 	if strings.TrimSpace(baseURL) == "" {
 		baseURL = defaultTMDBBaseURL
 	}
-	return &TMDBClient{apiKey: strings.TrimSpace(apiKey), baseURL: strings.TrimRight(baseURL, "/"), client: client}
+	return &TMDBClient{accessToken: strings.TrimSpace(accessToken), baseURL: strings.TrimRight(baseURL, "/"), client: client}
 }
 
 func (c *TMDBClient) Enrich(ctx context.Context, movie Movie) (Movie, error) {
@@ -53,7 +53,6 @@ func (c *TMDBClient) enrichAlias(ctx context.Context, movie Movie, alias string)
 		return movie, false, fmt.Errorf("parse TMDB endpoint: %w", err)
 	}
 	query := endpoint.Query()
-	query.Set("api_key", c.apiKey)
 	query.Set("language", "ru")
 	query.Set("query", alias)
 	if movie.Year != "" {
@@ -65,6 +64,7 @@ func (c *TMDBClient) enrichAlias(ctx context.Context, movie Movie, alias string)
 	if err != nil {
 		return movie, false, fmt.Errorf("build TMDB request: %w", err)
 	}
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
 	resp, err := c.doWithRetry(ctx, req)
 	if err != nil {
 		return movie, false, fmt.Errorf("search TMDB: %w", err)
