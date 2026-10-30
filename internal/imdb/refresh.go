@@ -83,11 +83,15 @@ func (r *Refresher) refresh(ctx context.Context) error {
 		return err
 	}
 	if current := r.manager.Generation(); current != previous {
+		stats := r.manager.Stats()
 		slog.Info("IMDb index refreshed",
 			"event", "imdb_index_refreshed",
 			"generation", current,
 			"previous_generation", previous,
 			"rows", r.manager.Len(),
+			"overflow_rows", stats.OverflowRows,
+			"skipped_rows", stats.SkippedRows,
+			"sort_applied", stats.SortApplied,
 		)
 	}
 	return nil
