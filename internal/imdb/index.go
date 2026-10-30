@@ -33,6 +33,16 @@ const MinSnapshotRows = 1_000_000
 // growth that would transiently hold both the old and new backing arrays.
 const expectedRatingRows = 1_900_000
 
+// The published export is about 30 MiB. Bound expanded bytes as well as archive
+// bytes: a small gzip can otherwise allocate an arbitrarily large index.
+const maxRatingsExportSize = 64 << 20
+
+const (
+	maxRatingRows    = 2_500_000
+	maxOverflowRows  = 4096
+	maxOverflowBytes = 4 << 20
+)
+
 // canonicalTitleIDDigits is the width IMDb zero-pads short identifiers to, so
 // title 1 is published as "tt0000001".
 const canonicalTitleIDDigits = 7
@@ -60,8 +70,9 @@ type entry struct {
 // future out-of-range input degrades into extra memory rather than into a wrong
 // or missing answer.
 type Index struct {
-	entries  []entry
-	overflow map[string]Rating
+	entries       []entry
+	overflow      map[string]Rating
+	overflowBytes int
 }
 
 type ParseStats struct {
@@ -93,7 +104,8 @@ func ParseRatingsWithStats(reader io.Reader) (*Index, ParseStats, error) {
 	stats := ParseStats{InputOrdered: true}
 	var previousID uint32
 	hasPrevious := false
-	scanner := bufio.NewScanner(reader)
+	limited := &io.LimitedReader{R: reader, N: maxRatingsExportSize + 1}
+	scanner := bufio.NewScanner(limited)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		// Deliberately operating on Bytes rather than Text: Text would allocate
@@ -106,8 +118,14 @@ func ParseRatingsWithStats(reader io.Reader) (*Index, ParseStats, error) {
 		if bytes.Equal(id, []byte("tconst")) {
 			continue
 		}
+		if !validTitleID(id) || len(rating) == 0 || len(votes) == 0 {
+			stats.SkippedRows++
+			continue
+		}
 		beforeCompact := len(index.entries)
-		index.add(id, rating, votes)
+		if err := index.add(id, rating, votes); err != nil {
+			return nil, stats, err
+		}
 		if len(index.entries) > beforeCompact {
 			currentID := index.entries[len(index.entries)-1].id
 			if hasPrevious && currentID < previousID {
@@ -123,11 +141,43 @@ func ParseRatingsWithStats(reader io.Reader) (*Index, ParseStats, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, stats, fmt.Errorf("scan IMDb ratings: %w", err)
 	}
+	if limited.N == 0 {
+		return nil, stats, fmt.Errorf("ratings export exceeds %d bytes", maxRatingsExportSize)
+	}
 	if !stats.InputOrdered {
 		slices.SortFunc(index.entries, func(a, b entry) int { return cmp.Compare(a.id, b.id) })
 		stats.SortApplied = true
 	}
+	for position := 1; position < len(index.entries); position++ {
+		if index.entries[position-1].id == index.entries[position].id {
+			return nil, stats, fmt.Errorf("duplicate IMDb title %s", formatTitleID(index.entries[position].id))
+		}
+	}
+	for id := range index.overflow {
+		if numericID, ok := parseCanonicalTitleID([]byte(id)); ok {
+			if _, found := slices.BinarySearchFunc(index.entries, numericID, func(candidate entry, target uint32) int {
+				return cmp.Compare(candidate.id, target)
+			}); found {
+				return nil, stats, fmt.Errorf("duplicate IMDb title %s", id)
+			}
+		}
+	}
 	return index, stats, nil
+}
+
+// Check cancellation at each buffered read, including CPU-only decompression of
+// an already downloaded archive. Network-backed readers also receive the same
+// context through Source.Open so cancellation interrupts blocked storage I/O.
+type ratingsContextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r ratingsContextReader) Read(destination []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(destination)
 }
 
 // splitRatingRow splits a tab-separated row into exactly three fields.
@@ -148,18 +198,40 @@ func splitRatingRow(row []byte) (id, rating, votes []byte, ok bool) {
 	return row[:first], remainder[:second], votes, true
 }
 
-func (i *Index) add(id, rating, votes []byte) {
+func (i *Index) add(id, rating, votes []byte) error {
+	if _, exists := i.overflow[string(id)]; exists {
+		return fmt.Errorf("duplicate IMDb title %s", id)
+	}
 	numericID, idOK := parseCanonicalTitleID(id)
 	scaledRating, ratingOK := parseScaledRating(rating)
 	voteCount, votesOK := parseUint32(votes)
 	if idOK && ratingOK && votesOK {
+		if i.Len() >= maxRatingRows {
+			return fmt.Errorf("ratings index exceeds %d rows", maxRatingRows)
+		}
+		if len(i.entries) == cap(i.entries) {
+			// Cap backing-array growth too; append's default growth can retain
+			// more entries than the admitted row budget.
+			entries := make([]entry, len(i.entries), min(maxRatingRows, cap(i.entries)+cap(i.entries)/4))
+			copy(entries, i.entries)
+			i.entries = entries
+		}
 		i.entries = append(i.entries, entry{id: numericID, votes: voteCount, rating: scaledRating})
-		return
+		return nil
+	}
+	bytes := len(id) + len(rating) + len(votes)
+	if len(i.overflow) >= maxOverflowRows || i.overflowBytes+bytes > maxOverflowBytes {
+		return errors.New("ratings overflow budget exceeded")
+	}
+	if i.Len() >= maxRatingRows {
+		return fmt.Errorf("ratings index exceeds %d rows", maxRatingRows)
 	}
 	if i.overflow == nil {
 		i.overflow = make(map[string]Rating)
 	}
 	i.overflow[string(id)] = Rating{ID: string(id), Rating: string(rating), Votes: string(votes)}
+	i.overflowBytes += bytes
+	return nil
 }
 
 func (i *Index) Lookup(id string) (Rating, bool) {
@@ -219,6 +291,23 @@ func parseCanonicalTitleID(id []byte) (uint32, bool) {
 		}
 	}
 	return uint32(value), true
+}
+
+// validTitleID checks the published spelling without restricting the numeric
+// range, so future identifiers beyond uint32 still use the overflow fallback.
+func validTitleID(id []byte) bool {
+	if len(id) < 2+canonicalTitleIDDigits || id[0] != 't' || id[1] != 't' {
+		return false
+	}
+	if len(id) > 2+canonicalTitleIDDigits && id[2] == '0' {
+		return false
+	}
+	for _, digit := range id[2:] {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func formatTitleID(id uint32) string {
@@ -318,12 +407,15 @@ func (m *Manager) Refresh(ctx context.Context, source Source) error {
 	if snapshot.Body == nil {
 		return errors.New("ratings snapshot has no body")
 	}
-	index, stats, err := ParseRatingsWithStats(snapshot.Body)
+	index, stats, err := ParseRatingsWithStats(ratingsContextReader{ctx: ctx, reader: snapshot.Body})
 	if err != nil {
 		return err
 	}
 	if err := CheckMinRows(stats, m.minRows); err != nil {
 		return fmt.Errorf("ratings generation %d: %w", snapshot.Generation, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	m.current.Store(&state{generation: snapshot.Generation, index: index, stats: stats})
 	return nil

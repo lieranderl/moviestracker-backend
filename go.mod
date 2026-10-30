@@ -1,6 +1,6 @@
 module github.com/lieranderl/moviestracker-backend
 
-go 1.26.10
+go 1.27.3
 
 require (
 	cloud.google.com/go/firestore v1.29.2
@@ -9,6 +9,8 @@ require (
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/sync v0.24.0
 	google.golang.org/api v0.310.0
+	google.golang.org/grpc v1.85.0
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
@@ -57,6 +59,4 @@ require (
 	google.golang.org/genproto v0.0.0-20261026165753-2ffab32bce7e // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261026165753-2ffab32bce7e // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261026165753-2ffab32bce7e // indirect
-	google.golang.org/grpc v1.85.0 // indirect
-	google.golang.org/protobuf v1.36.12 // indirect
 )

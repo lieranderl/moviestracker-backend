@@ -13,6 +13,7 @@ import (
 )
 
 const defaultTMDBBaseURL = "https://api.themoviedb.org/3"
+const maxTMDBResponseSize = 1 << 20
 
 type TMDBClient struct {
 	accessToken string
@@ -87,7 +88,11 @@ func (c *TMDBClient) enrichAlias(ctx context.Context, movie Movie, alias string)
 			VoteCount     int64   `json:"vote_count"`
 		} `json:"results"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	body, err := readBoundedResponse(resp.Body, maxTMDBResponseSize)
+	if err != nil {
+		return movie, false, fmt.Errorf("read TMDB response: %w", err)
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return movie, false, fmt.Errorf("decode TMDB response: %w", err)
 	}
 	if len(payload.Results) == 0 {

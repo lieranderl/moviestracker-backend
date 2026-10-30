@@ -12,14 +12,21 @@ torrent search.
 
 ## Runtime architecture
 
-- Go 1.26.10, context-aware `net/http`, goquery
+- Go 1.27.3, context-aware `net/http`, goquery
 - Firestore Native database `moviestracker` in `europe-west1`
 - Cloud Storage generation-aware immutable IMDb index, streamed and refreshed by
   an authenticated downloader callback, with request-path refresh as fallback
 - Cloud Run service/jobs with dedicated identities and scale-to-zero defaults
-- OpenTofu 1.12.6 and Google providers 7.42.0
+- OpenTofu 1.13.2 and Google providers 8.9.0
 - GitHub release workflow with OIDC, image scans, SBOMs, digest deployments,
   fresh-data jobs, smoke checks, and automatic image rollback
+
+Upstream responses have decoded-size limits: 4 MiB for Rutor HTML, 1 MiB for
+TMDB JSON, and 64 MiB for streamed IMDb exports. IMDb refresh work has a
+10-second request-derived deadline; failures retain the current index.
+Firestore transactions preserve the newest persisted discovery timestamp across
+overlapping or degraded catalog runs. See [SECURITY_REVIEW.md](SECURITY_REVIEW.md)
+for the review findings, fixes, limits, and verification evidence.
 
 ## Known open issues
 
@@ -49,7 +56,11 @@ make vet
 make lint
 make vuln
 make build
+python3 scripts/test_release_workflow.py
 ```
+
+With Promtool 3.15.1 installed, `python3 scripts/test_imdb_freshness.py` tests the
+actual alert expression offline. CI downloads and checksum-verifies that tool.
 
 Firestore and Cloud Storage use Application Default Credentials. Use emulators
 for integration tests; no database credential is supported.

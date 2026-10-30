@@ -4,10 +4,13 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"sync"
 	"sync/atomic"
 	"time"
 )
+
+// Leave five seconds to serve the retained index before the HTTP server's
+// 15-second write deadline. The caller's earlier deadline always takes priority.
+const refreshTimeout = 10 * time.Second
 
 // Refresher keeps the index current without a background timer.
 //
@@ -31,12 +34,12 @@ type Refresher struct {
 	manager     *Manager
 	// refreshing admits one refresh at a time. Requests that arrive while a
 	// refresh is running are served from the current index rather than queued.
-	refreshing sync.Mutex
+	refreshing chan struct{}
 	source     Source
 }
 
 func NewRefresher(manager *Manager, source Source, interval time.Duration) *Refresher {
-	refresher := &Refresher{interval: interval, manager: manager, source: source}
+	refresher := &Refresher{interval: interval, manager: manager, source: source, refreshing: make(chan struct{}, 1)}
 	// The caller loads the initial index before serving, so the first
 	// opportunistic check is due one interval after start-up.
 	refresher.lastAttempt.Store(time.Now().UnixNano())
@@ -49,10 +52,12 @@ func (r *Refresher) Ensure(ctx context.Context) {
 	if !r.due(time.Now()) {
 		return
 	}
-	if !r.refreshing.TryLock() {
+	select {
+	case r.refreshing <- struct{}{}:
+	default:
 		return
 	}
-	defer r.refreshing.Unlock()
+	defer func() { <-r.refreshing }()
 	// Re-check under the lock: several requests can pass the due test before the
 	// winner records its attempt.
 	now := time.Now()
@@ -60,6 +65,8 @@ func (r *Refresher) Ensure(ctx context.Context) {
 		return
 	}
 	r.lastAttempt.Store(now.UnixNano())
+	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
+	defer cancel()
 	if err := r.refresh(ctx); err != nil {
 		slog.Error("IMDb index refresh failed; retaining current snapshot",
 			"event", "imdb_index_refresh_failed",
@@ -71,8 +78,14 @@ func (r *Refresher) Ensure(ctx context.Context) {
 // RefreshNow synchronously checks the published generation. Cloud Run IAM
 // protects the internal HTTP endpoint that calls this method.
 func (r *Refresher) RefreshNow(ctx context.Context) error {
-	r.refreshing.Lock()
-	defer r.refreshing.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
+	defer cancel()
+	select {
+	case r.refreshing <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() { <-r.refreshing }()
 	r.lastAttempt.Store(time.Now().UnixNano())
 	return r.refresh(ctx)
 }

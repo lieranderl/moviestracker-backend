@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 )
+
+const maxRutorResponseSize = 4 << 20
 
 var btihPattern = regexp.MustCompile(`(?i)btih:([a-f0-9]{40})`)
 
@@ -59,13 +62,24 @@ func ParseRutorHTML(reader io.Reader, isSeries bool) ([]Torrent, error) {
 }
 
 func ParseRutorHTMLWithDiagnostics(reader io.Reader, isSeries bool) (TrackerBatch, error) {
-	doc, err := goquery.NewDocumentFromReader(reader)
+	body, err := readBoundedResponse(reader, maxRutorResponseSize)
+	if err != nil {
+		return TrackerBatch{}, fmt.Errorf("read rutor response: %w", err)
+	}
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
 	if err != nil {
 		return TrackerBatch{}, fmt.Errorf("parse rutor html: %w", err)
 	}
+	rows := doc.Find("tr.gai, tr.tum")
+	if rows.Length() == 0 {
+		// Captured fixtures establish torrent rows as the page contract. Without
+		// an observed empty-page marker, reject rowless responses rather than
+		// treating a challenge or changed document as a successful refresh.
+		return TrackerBatch{}, fmt.Errorf("unexpected rutor document: torrent rows are missing")
+	}
 
 	batch := TrackerBatch{Torrents: make([]Torrent, 0)}
-	doc.Find("tr.gai, tr.tum").Each(func(_ int, row *goquery.Selection) {
+	rows.Each(func(_ int, row *goquery.Selection) {
 		cells := row.Find("td")
 		if cells.Length() < 3 {
 			batch.Fetched++
@@ -122,6 +136,19 @@ func ParseRutorHTMLWithDiagnostics(reader io.Reader, isSeries bool) (TrackerBatc
 		batch.Torrents = append(batch.Torrents, torrent)
 	})
 	return batch, nil
+}
+
+// Limit the decoded HTTP body, including data after a complete HTML/JSON value.
+// The HTTP transport may already have decompressed the upstream response.
+func readBoundedResponse(reader io.Reader, limit int64) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("response exceeds %d bytes", limit)
+	}
+	return body, nil
 }
 
 func parseRutorTitle(title string) Torrent {
