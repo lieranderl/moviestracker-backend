@@ -4,7 +4,7 @@
 release-tag-only GitHub OIDC trust. The release identity can push images and
 update/run Cloud Run workloads, but cannot change infrastructure, IAM, secrets,
 databases, or state. `prod/` manages Firestore, the IMDb bucket, Artifact
-Registry, the Qwik and IMDb Cloud Run services, four jobs/schedules,
+Registry, the web and IMDb Cloud Run services, four jobs/schedules,
 least-privilege runtime identities, and alerts. Frontend releases update only
 the immutable image revision and traffic; OpenTofu owns runtime settings.
 
@@ -33,8 +33,10 @@ the immutable image revision and traffic; OpenTofu owns runtime settings.
 6. Frontend MongoDB and Firebase secrets are retired and absent from
    OpenTofu. Do not import or recreate them.
 
-The Qwik service calls the IAM-private IMDb service directly with a Google ID
-token and the `movies-app` service account as invoker. API Gateway and
+The IMDb service is public by decision: moviestracker-app clients call it
+without credentials. `moviestracker-web` is deployed by the moviestracker-app
+repository's `web.yml`; OpenTofu owns its settings, not its image or traffic.
+API Gateway and
 `GC_API_KEY` are retired and absent from OpenTofu. Do not recreate either.
 Gateway deletion must use a saved, reviewed production plan.
 The downloader invokes `POST /internal/refresh` with its workload identity after
@@ -76,6 +78,26 @@ To roll back to an earlier release, open that release's workflow run and use
 **Re-run jobs → deploy**. A re-run job reuses the original run's digest
 artifacts (retained 90 days), so the exact previously scanned images are
 redeployed without a rebuild.
+
+## Drift detection
+
+`.github/workflows/drift.yml` runs a read-only `tofu plan -lock=false` daily
+and fails if production differs from `infra/prod`. It authenticates through a
+separate `moviestracker-github-plan` pool that trusts only that workflow on
+`master`, as `movies-infra-planner@` (`roles/viewer`,
+`roles/iam.securityReviewer`, state bucket read). Setup, once:
+
+1. Apply `infra/bootstrap` as a platform administrator (break-glass).
+2. Set repository variables `GCP_PLAN_WORKLOAD_ID_PROVIDER` and
+   `GCP_PLAN_SERVICE_ACCOUNT` from its outputs.
+3. Store the production tfvars as JSON in the repository secret
+   `PROD_TFVARS_JSON`.
+
+The same check runs locally:
+
+```sh
+tofu -chdir=infra/prod plan -lock=false -detailed-exitcode -var-file=prod.auto.tfvars.json
+```
 
 ## Cost controls
 

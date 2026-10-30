@@ -1,0 +1,72 @@
+name: Infrastructure drift
+
+# Daily read-only `tofu plan` against production. It never locks or writes
+# state and never applies; a non-empty plan fails the run so GitHub notifies
+# the maintainer. Bootstrap trusts only this file on master (see
+# infra/bootstrap), so the identity cannot be used from a pull request.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-drift
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: 1.13.2
+          tofu_wrapper: false
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_ID_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+      - name: Write production variables
+        env:
+          PROD_TFVARS_JSON: ${{ secrets.PROD_TFVARS_JSON }}
+        run: |
+          umask 077
+          printf '%s' "$PROD_TFVARS_JSON" > "${RUNNER_TEMP}/prod.auto.tfvars.json"
+      - name: Initialise
+        run: tofu -chdir=infra/prod init -input=false -lockfile=readonly
+      - name: Plan
+        run: |
+          set +e
+          tofu -chdir=infra/prod plan -lock=false -input=false -no-color \
+            -detailed-exitcode -var-file="${RUNNER_TEMP}/prod.auto.tfvars.json" \
+            > "${RUNNER_TEMP}/plan.txt" 2>&1
+          status=$?
+          set -e
+          # This repository is public: report only which resources differ,
+          # never attribute values from the plan body.
+          {
+            echo "### Production drift"
+            echo
+            if test "$status" -eq 0; then
+              echo "No changes: production matches infra/prod."
+            else
+              echo '```'
+              grep -E '^  # |^Plan:|^Error' "${RUNNER_TEMP}/plan.txt" || true
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          case "$status" in
+            0) ;;
+            2) echo "::error::Production differs from infra/prod; see the run summary." >&2; exit 1 ;;
+            *) echo "::error::tofu plan failed; see the run summary." >&2; exit 1 ;;
+          esac

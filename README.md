@@ -7,7 +7,7 @@ One Go module containing the active MoviesTracker backend workloads:
 - `cmd/downloadimdbdata`: IMDb archive → Cloud Storage refresh job
 
 Kinozal, MongoDB, Firebase Admin, Colly, the custom TMDB client, and the old
-GetTorrentsForMovie service are intentionally removed. Qwik uses JacRed for
+GetTorrentsForMovie service are intentionally removed. The web app uses JacRed for
 torrent search.
 
 ## Runtime architecture
@@ -36,9 +36,10 @@ Tracked but not yet fixed, so the README does not overstate the current state:
 - **Build provenance attestation does not work on this repository.** GitHub
   artifact attestations are unavailable for user-owned private repositories, and
   environment protection rules (required reviewers) are unavailable on the
-  current billing plan. Releases therefore carry no cryptographic provenance and
-  no human approval gate. Making the repository public, or moving it into an
-  organisation on a supporting plan, would enable both.
+  current billing plan. Releases up to v3.0.3 therefore carry no cryptographic
+  provenance and no human approval gate. The repository is now public, which
+  should enable both; the next release must confirm attestation works, and the
+  `production` environment still needs a required reviewer.
 - The IMDb ratings index holds ~1.71M rows in ~22 MiB and peaks at ~61 MiB
   across a refresh, against a 512 MiB Cloud Run limit. The service still
   requests 512 MiB, so there is room to lower it once real usage is observed;
@@ -70,7 +71,7 @@ for integration tests; no database credential is supported.
 
 Copy `.env.example` to `.env` for local use. Required production secrets live
 in Secret Manager and are attached only to the workload that needs them.
-`TMDBAPIKEY` contains the TMDB API Read Access Token; catalog jobs send it in
+`TMDBAPIKEY` (from the `TMDB_API_KEY` secret) contains the TMDB API Read Access Token; catalog jobs send it in
 the `Authorization: Bearer <token>` header.
 Catalog enrichment concurrency defaults to 10 and is capped at 20 through
 `ENRICHER_CONCURRENCY`.

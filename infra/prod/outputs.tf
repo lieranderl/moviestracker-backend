@@ -2,12 +2,12 @@ output "github_backend_deployer_service_account" {
   value = "movies-backend-deployer@${var.project_id}.iam.gserviceaccount.com"
 }
 
-output "github_frontend_deployer_service_account" {
-  value = "movies-frontend-deployer@${var.project_id}.iam.gserviceaccount.com"
+output "web_deployer_service_account" {
+  value = "movies-web-deployer@${var.project_id}.iam.gserviceaccount.com"
 }
 
-output "qwik_service_account" {
-  value = google_service_account.app.email
+output "web_service_account" {
+  value = google_service_account.web.email
 }
 
 output "imdb_service_url" {

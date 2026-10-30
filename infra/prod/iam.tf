@@ -22,10 +22,10 @@ resource "google_service_account" "scheduler" {
   display_name = "MoviesTracker scheduler"
 }
 
-resource "google_service_account" "app" {
+resource "google_service_account" "web" {
   project      = var.project_id
-  account_id   = "movies-app"
-  display_name = "MoviesTracker Qwik application"
+  account_id   = "movies-web"
+  display_name = "MoviesTracker web application (Go)"
 }
 
 resource "google_storage_bucket_iam_member" "imdb_reader" {
@@ -46,38 +46,44 @@ resource "google_project_iam_member" "catalog_firestore_writer" {
   member  = "serviceAccount:${google_service_account.catalog_jobs.email}"
 }
 
-resource "google_project_iam_member" "app_firestore_reader" {
+# The web app stores per-user state, so it needs read-write Firestore access.
+resource "google_project_iam_member" "web_firestore_user" {
   project = var.project_id
-  role    = "roles/datastore.viewer"
-  member  = "serviceAccount:${google_service_account.app.email}"
+  role    = "roles/datastore.user"
+  member  = "serviceAccount:${google_service_account.web.email}"
 }
 
-resource "google_secret_manager_secret_iam_member" "catalog_tmdb" {
+resource "google_secret_manager_secret_iam_member" "catalog_tmdb_api_key" {
   project   = var.project_id
-  secret_id = google_secret_manager_secret.tmdb.secret_id
+  secret_id = google_secret_manager_secret.runtime["TMDB_API_KEY"].secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.catalog_jobs.email}"
 }
 
 locals {
-  frontend_secret_ids = toset(["AUTH_SECRET", "GOOGLE_SECRET", "TMDB_API_KEY"])
+  # Every runtime secret in the project. Values are written out of band; only
+  # the containers are managed here. AUTH_SECRET belonged to the retired Qwik
+  # frontend and has no consumer.
+  runtime_secret_ids = toset(["AUTH_SECRET", "GOOGLE_SECRET", "JACRED_APIKEY", "TMDB_API_KEY", "WEB_SESSION_KEY"])
+  web_secret_ids     = toset(["GOOGLE_SECRET", "JACRED_APIKEY", "TMDB_API_KEY", "WEB_SESSION_KEY"])
 }
 
-resource "google_secret_manager_secret" "frontend" {
-  for_each  = local.frontend_secret_ids
+resource "google_secret_manager_secret" "runtime" {
+  for_each  = local.runtime_secret_ids
   project   = var.project_id
   secret_id = each.value
   replication {
     auto {}
   }
+  depends_on = [google_project_service.required]
 }
 
-resource "google_secret_manager_secret_iam_member" "app_frontend_secrets" {
-  for_each  = google_secret_manager_secret.frontend
+resource "google_secret_manager_secret_iam_member" "web_secrets" {
+  for_each  = local.web_secret_ids
   project   = var.project_id
-  secret_id = each.value.secret_id
+  secret_id = google_secret_manager_secret.runtime[each.value].secret_id
   role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.app.email}"
+  member    = "serviceAccount:${google_service_account.web.email}"
 }
 
 resource "google_service_account_iam_member" "github_backend_act_as" {
@@ -91,8 +97,9 @@ resource "google_service_account_iam_member" "github_backend_act_as" {
   member             = "serviceAccount:movies-backend-deployer@${var.project_id}.iam.gserviceaccount.com"
 }
 
-resource "google_service_account_iam_member" "github_frontend_act_as" {
-  service_account_id = google_service_account.app.name
+# The web repository's release identity deploys moviestracker-web as movies-web.
+resource "google_service_account_iam_member" "web_deployer_act_as" {
+  service_account_id = google_service_account.web.name
   role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:movies-frontend-deployer@${var.project_id}.iam.gserviceaccount.com"
+  member             = "serviceAccount:movies-web-deployer@${var.project_id}.iam.gserviceaccount.com"
 }
