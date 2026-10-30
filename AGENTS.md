@@ -50,6 +50,10 @@ explicitly says otherwise.
   The Cloud Run service is **public by decision** (`invoker_iam_disabled`):
   installed moviestracker-app clients (desktop, NAS, web) call it without
   credentials. Requiring a token would break every installed client.
+- Because Cloud Run IAM is off, `POST /internal/refresh` authenticates in-app:
+  it accepts only a Google ID token for the service URL issued to
+  `IMDB_REFRESH_INVOKER` (`movies-imdb-downloader@`), and is not registered
+  when that variable is unset. Never expose it without that check.
 - API Gateway and `GC_API_KEY` are retired; do not restore the gateway or
   API-key authentication.
 - Firestore collections `latesttorrentsmovies`, `hdr10movies`, `dvmovies` and

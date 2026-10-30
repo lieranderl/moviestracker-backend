@@ -34,7 +34,9 @@ the immutable image revision and traffic; OpenTofu owns runtime settings.
    OpenTofu. Do not import or recreate them.
 
 The IMDb service is public by decision: moviestracker-app clients call it
-without credentials. `moviestracker-web` is deployed by the moviestracker-app
+without credentials; `POST /internal/refresh` verifies the downloader's ID
+token in-app against `IMDB_REFRESH_INVOKER`, so apply OpenTofu before the
+first release that contains that check. `moviestracker-web` is deployed by the moviestracker-app
 repository's `web.yml`; OpenTofu owns its settings, not its image or traffic.
 API Gateway and
 `GC_API_KEY` are retired and absent from OpenTofu. Do not recreate either.

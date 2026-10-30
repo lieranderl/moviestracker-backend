@@ -6,7 +6,8 @@ resource "google_cloud_run_v2_service" "imdb" {
   deletion_protection = true
   # Public by decision: installed moviestracker-app clients (desktop, NAS,
   # web) call /getimdb without credentials. max_instance_count bounds the cost
-  # of abuse. The invoker bindings below stay for authenticated callers.
+  # of abuse. With IAM off, /internal/refresh verifies the downloader's ID
+  # token in-app against IMDB_REFRESH_INVOKER.
   invoker_iam_disabled = true
 
   template {
@@ -42,6 +43,10 @@ resource "google_cloud_run_v2_service" "imdb" {
       env {
         name  = "IMDB_REFRESH_INTERVAL"
         value = "15m"
+      }
+      env {
+        name  = "IMDB_REFRESH_INVOKER"
+        value = google_service_account.imdb_downloader.email
       }
       startup_probe {
         initial_delay_seconds = 1
