@@ -20,6 +20,7 @@ import (
 
 type config struct {
 	bucket          string
+	indexObject     string
 	object          string
 	port            string
 	refreshInterval time.Duration
@@ -54,10 +55,12 @@ func run(ctx context.Context, getenv func(string) string) error {
 			slog.Error("close storage client", "error", err)
 		}
 	}()
-	source := gcsstore.RatingsSource{Bucket: config.bucket, Client: storageClient, Object: config.object}
+	source := gcsstore.RatingsSource{Bucket: config.bucket, Client: storageClient, IndexObject: config.indexObject, Object: config.object}
 	manager := imdb.NewManager(imdb.MinSnapshotRows)
-	if err := manager.Refresh(ctx, source); err != nil {
-		return fmt.Errorf("load initial IMDb index: %w", err)
+	exportOnly := source
+	exportOnly.IndexObject = ""
+	if err := loadInitialIndex(ctx, manager, source, exportOnly); err != nil {
+		return err
 	}
 
 	mux := http.NewServeMux()
@@ -110,6 +113,24 @@ func run(ctx context.Context, getenv func(string) string) error {
 	}
 }
 
+// loadInitialIndex falls back to the export-only source when the preferred
+// one fails, so a bad binary index degrades cold starts rather than failing
+// them. The refresher keeps preferring the index and logs each later failure.
+func loadInitialIndex(ctx context.Context, manager *imdb.Manager, preferred, fallback imdb.Source) error {
+	err := manager.Refresh(ctx, preferred)
+	if err != nil && fallback != nil {
+		slog.Error("IMDb binary index failed to load; falling back to the export",
+			"event", "imdb_index_fallback",
+			"error", err,
+		)
+		err = manager.Refresh(ctx, fallback)
+	}
+	if err != nil {
+		return fmt.Errorf("load initial IMDb index: %w", err)
+	}
+	return nil
+}
+
 func loadConfig(getenv func(string) string) (config, error) {
 	bucket := strings.TrimSpace(getenv("IMDB_BUCKET"))
 	if bucket == "" {
@@ -118,6 +139,10 @@ func loadConfig(getenv func(string) string) (config, error) {
 	object := strings.TrimSpace(getenv("IMDB_OBJECT"))
 	if object == "" {
 		object = "title.ratings.tsv.gz"
+	}
+	indexObject := strings.TrimSpace(getenv("IMDB_INDEX_OBJECT"))
+	if indexObject == "" {
+		indexObject = "title.ratings.idx"
 	}
 	port := strings.TrimSpace(getenv("PORT"))
 	if port == "" {
@@ -129,6 +154,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 	return config{
 		bucket:          bucket,
+		indexObject:     indexObject,
 		object:          object,
 		port:            port,
 		refreshInterval: interval,

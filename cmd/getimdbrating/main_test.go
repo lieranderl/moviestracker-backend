@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/lieranderl/moviestracker-backend/internal/imdb"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/idtoken"
 )
@@ -20,8 +23,25 @@ func TestLoadConfigDefaults(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "title.ratings.tsv.gz", config.object)
+	require.Equal(t, "title.ratings.idx", config.indexObject)
 	require.Equal(t, 15*time.Minute, config.refreshInterval)
 	require.Equal(t, "8080", config.port)
+}
+
+func TestLoadInitialIndexFallsBackToExport(t *testing.T) {
+	failing := imdb.SourceFunc(func(context.Context, int64) (imdb.Snapshot, error) {
+		return imdb.Snapshot{}, imdb.ErrInvalidIndex
+	})
+	export := imdb.SourceFunc(func(context.Context, int64) (imdb.Snapshot, error) {
+		return imdb.Snapshot{Generation: 3, Body: io.NopCloser(strings.NewReader("tt0000001\t7.0\t10\n"))}, nil
+	})
+	manager := imdb.NewManager(1)
+
+	require.NoError(t, loadInitialIndex(context.Background(), manager, failing, export))
+	require.Equal(t, int64(3), manager.Generation())
+
+	err := loadInitialIndex(context.Background(), imdb.NewManager(1), failing, failing)
+	require.ErrorIs(t, err, imdb.ErrInvalidIndex)
 }
 
 func TestLoadConfigRequiresBucket(t *testing.T) {

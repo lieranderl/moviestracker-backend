@@ -6,7 +6,9 @@ import (
 	"context"
 	"io"
 	"testing"
+	"time"
 
+	"cloud.google.com/go/storage"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,6 +52,16 @@ type trackedObject struct {
 func (t *trackedObject) Close() error {
 	t.closed = true
 	return nil
+}
+
+func TestPreferIndexOnlyWhenNotOlderThanExport(t *testing.T) {
+	export := &storage.ObjectAttrs{Created: time.Date(2026, 10, 30, 2, 0, 0, 0, time.UTC)}
+
+	require.False(t, preferIndex(export, nil), "missing index")
+	require.True(t, preferIndex(export, &storage.ObjectAttrs{Created: export.Created.Add(time.Second)}), "written after the export")
+	require.True(t, preferIndex(export, &storage.ObjectAttrs{Created: export.Created}), "same instant")
+	require.False(t, preferIndex(export, &storage.ObjectAttrs{Created: export.Created.Add(-24 * time.Hour)}),
+		"an index left behind by an older job must not freeze ratings")
 }
 
 func TestSourceRejectsMissingConfiguration(t *testing.T) {

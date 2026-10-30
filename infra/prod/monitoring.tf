@@ -75,7 +75,7 @@ resource "google_logging_metric" "imdb_refresh_failure" {
   filter  = <<-EOT
     resource.type="cloud_run_revision"
     resource.labels.service_name="get-imdb-rating-service"
-    jsonPayload.event="imdb_index_refresh_failed"
+    jsonPayload.event=("imdb_index_refresh_failed" OR "imdb_index_fallback")
   EOT
   metric_descriptor {
     metric_kind = "DELTA"
