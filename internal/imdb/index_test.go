@@ -128,6 +128,98 @@ func TestParseRatingsSkipsMalformedRows(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestMalformedTitleIDsCannotSatisfySnapshotFloor(t *testing.T) {
+	index, stats, err := ParseRatingsWithStats(strings.NewReader(
+		"\t\t\nnot-a-title\t7.0\t10\ntt133093\t7.0\t10\ntt00133093\t7.0\t10\n",
+	))
+
+	require.NoError(t, err)
+	require.Zero(t, index.Len())
+	require.Equal(t, 4, stats.SkippedRows)
+	require.ErrorIs(t, CheckMinRows(stats, 1), ErrSnapshotTooSmall)
+}
+
+func TestDuplicateTitleIDsRejectSnapshot(t *testing.T) {
+	for _, raw := range []string{
+		"tt0000001\t7.0\t10\ntt0000001\t8.0\t20\n",
+		"tt0000002\t7.0\t10\ntt0000001\t8.0\t20\ntt0000002\t9.0\t30\n",
+		"tt99999999999\t7.0\t10\ntt99999999999\t8.0\t20\n",
+		"tt0000001\t7.0\t10\ntt0000001\t8.25\t20\n",
+		"tt0000001\t8.25\t20\ntt0000001\t7.0\t10\n",
+	} {
+		_, _, err := ParseRatingsWithStats(strings.NewReader(raw))
+		require.ErrorContains(t, err, "duplicate IMDb title")
+	}
+}
+
+func TestRatingsParserRejectsOversizedDecompressedInput(t *testing.T) {
+	// Stream 64 MiB plus one byte without allocating the expanded payload.
+	reader := io.LimitReader(&repeatedRatingInput{row: strings.Repeat("x", 1023) + "\n"}, (64<<20)+1)
+	_, _, err := ParseRatingsWithStats(reader)
+	require.ErrorContains(t, err, "ratings export exceeds")
+}
+
+func TestRatingsParserBoundsCompactIndexGrowth(t *testing.T) {
+	reader := syntheticRatings(2_500_001)
+	defer func() { _ = reader.(*io.PipeReader).Close() }()
+	_, _, err := ParseRatingsWithStats(reader)
+	require.ErrorContains(t, err, "ratings index exceeds")
+}
+
+func TestRatingsParserBoundsOverflowMemory(t *testing.T) {
+	for _, votes := range []string{"10", strings.Repeat("9", 2048)} {
+		var input strings.Builder
+		for row := uint64(1); row <= 4097; row++ {
+			fmt.Fprintf(&input, "tt%d\t7.25\t%s\n", uint64(math.MaxUint32)+row, votes)
+		}
+		_, _, err := ParseRatingsWithStats(strings.NewReader(input.String()))
+		require.ErrorContains(t, err, "ratings overflow budget exceeded")
+	}
+}
+
+func TestManagerRetainsSnapshotWhenParsingIsCancelled(t *testing.T) {
+	manager := loadedManager(t, "tt0000001\t7.0\t10\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err := manager.Refresh(ctx, SourceFunc(func(context.Context, int64) (Snapshot, error) {
+		return Snapshot{Generation: 2, Body: io.NopCloser(&cancelledRatingsReader{
+			reader: strings.NewReader("tt0000001\t8.0\t20\n"), cancel: cancel,
+		})}, nil
+	}))
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.EqualValues(t, 1, manager.Generation())
+	rating, found := manager.Lookup("tt0000001")
+	require.True(t, found)
+	require.Equal(t, "7.0", rating.Rating)
+}
+
+type cancelledRatingsReader struct {
+	reader io.Reader
+	cancel context.CancelFunc
+}
+
+func (r *cancelledRatingsReader) Read(destination []byte) (int, error) {
+	n, err := r.reader.Read(destination)
+	r.cancel()
+	return n, err
+}
+
+type repeatedRatingInput struct {
+	row    string
+	offset int
+}
+
+func (r *repeatedRatingInput) Read(destination []byte) (int, error) {
+	written := 0
+	for written < len(destination) {
+		n := copy(destination[written:], r.row[r.offset:])
+		written += n
+		r.offset = (r.offset + n) % len(r.row)
+	}
+	return written, nil
+}
+
 // Entries are binary searched, so ordering has to hold regardless of input order
 // and across the seven to eight digit boundary where lexical and numeric order
 // disagree: "tt10000000" sorts before "tt2000000" as text but after it as a

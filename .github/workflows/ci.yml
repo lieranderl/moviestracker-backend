@@ -19,13 +19,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: true
       - name: Verify formatting
         run: test -z "$(gofmt -l cmd internal)"
+      - name: Verify release rollback
+        run: python3 scripts/test_release_workflow.py
       - name: Unit tests
         run: go test ./... -covermode=atomic -coverprofile=coverage.out
       - name: Coverage threshold
@@ -41,10 +43,10 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Vulnerability scan
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
-      - uses: golangci/golangci-lint-action@v9
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      - uses: golangci/golangci-lint-action@v9.3.0
         with:
-          version: v2.12.2
+          version: v2.15.0
 
   containers:
     needs: go
@@ -55,9 +57,9 @@ jobs:
       matrix:
         app: [getmovies, getimdbrating, downloadimdbdata]
     steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - uses: actions/checkout@v7.0.1
+      - uses: docker/setup-buildx-action@v4.4.1
+      - uses: docker/build-push-action@v7.4.0
         with:
           context: .
           build-args: APP=${{ matrix.app }}
@@ -77,16 +79,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: opentofu/setup-opentofu@v2.0.2
         with:
-          tofu_version: 1.12.6
+          tofu_version: 1.13.2
       - name: Format
         run: tofu fmt -check -recursive infra
       - name: Validate bootstrap
         run: tofu -chdir=infra/bootstrap init -backend=false && tofu -chdir=infra/bootstrap validate
       - name: Validate production
         run: tofu -chdir=infra/prod init -backend=false && tofu -chdir=infra/prod validate
+      - name: Verify IMDb freshness policy
+        env:
+          PROMETHEUS_VERSION: 3.15.1
+          PROMETHEUS_SHA256: 6a726885328ad9efebbf36e876ce2fb6225468a71fd1e7ce3ba666d5f4d97a84
+        run: |
+          archive="prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz"
+          curl --fail --show-error --silent --location --retry 3 \
+            "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/${archive}" \
+            --output "${RUNNER_TEMP}/${archive}"
+          echo "${PROMETHEUS_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum --check
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "$RUNNER_TEMP" --strip-components=1 \
+            "prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool"
+          python3 scripts/test_imdb_freshness.py --promtool "${RUNNER_TEMP}/promtool"
       - uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config

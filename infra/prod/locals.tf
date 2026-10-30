@@ -19,7 +19,9 @@ locals {
     {
       "downloadimdbdata-job-scheduler-trigger" = {
         job_name = "downloadimdbdata-job"
-        schedule = "0 3 * * *"
+        schedule = "0 2 * * *"
+        # A fixed 24h cadence keeps the freshness window valid across DST.
+        time_zone = "Etc/UTC"
       }
     }
   )

@@ -30,6 +30,44 @@ func TestTMDBClientEnrichesMatchingMovie(t *testing.T) {
 	require.Equal(t, "6.8", got.VoteAverage)
 }
 
+func TestTMDBClientRejectsOversizedResponseAfterValidJSON(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"results":[]}` + strings.Repeat(" ", 1<<20))),
+		}, nil
+	})}
+
+	_, err := NewTMDBClient(client, "https://tmdb.test", "secret").Enrich(context.Background(), Movie{SearchName: "Movie"})
+
+	require.ErrorContains(t, err, "response exceeds")
+}
+
+func TestTMDBClientAcceptsResponseAtSizeLimit(t *testing.T) {
+	json := `{"results":[]}`
+	body := json + strings.Repeat(" ", (1<<20)-len(json))
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+
+	_, err := NewTMDBClient(client, "https://tmdb.test", "secret").Enrich(context.Background(), Movie{SearchName: "Movie"})
+
+	require.NoError(t, err)
+}
+
+func TestTMDBClientRejectsOversizedJSONValue(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"results":[],"padding":"` + strings.Repeat("a", 1<<20) + `"}`)),
+		}, nil
+	})}
+
+	_, err := NewTMDBClient(client, "https://tmdb.test", "secret").Enrich(context.Background(), Movie{SearchName: "Movie"})
+
+	require.ErrorContains(t, err, "response exceeds")
+}
+
 func TestTMDBClientRetriesRateLimit(t *testing.T) {
 	var attempts atomic.Int32
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {

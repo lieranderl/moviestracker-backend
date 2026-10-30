@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -188,6 +189,53 @@ func TestRefresherMiddlewareServesTheRequestAndRefreshes(t *testing.T) {
 	require.EqualValues(t, 1, opens.Load())
 	// The refresh completes before the lookup, so the request observes new data.
 	require.JSONEq(t, `{"Id":"tt0000001","Rating":"8.8","Votes":"20"}`, recorder.Body.String())
+}
+
+func TestRefresherBoundsStorageWorkAndServesExistingRating(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		manager := loadedManager(t, "tt0000001\t7.0\t10\n")
+		refresher := NewRefresher(manager, SourceFunc(func(ctx context.Context, _ int64) (Snapshot, error) {
+			deadline, bounded := ctx.Deadline()
+			require.True(t, bounded, "storage work needs its own deadline")
+			require.LessOrEqual(t, time.Until(deadline), 10*time.Second)
+			<-ctx.Done()
+			return Snapshot{}, ctx.Err()
+		}), time.Hour)
+		refresher.lastAttempt.Store(0)
+		response := httptest.NewRecorder()
+		start := time.Now()
+
+		refresher.Middleware(NewHandler(manager.Lookup)).ServeHTTP(response,
+			httptest.NewRequest(http.MethodGet, "/getimdb?imdb_id=tt0000001", nil))
+
+		require.Equal(t, http.StatusOK, response.Code)
+		require.JSONEq(t, `{"Id":"tt0000001","Rating":"7.0","Votes":"10"}`, response.Body.String())
+		require.EqualValues(t, 1, manager.Generation())
+		require.Equal(t, 10*time.Second, time.Since(start))
+	})
+}
+
+func TestRefreshNowCancelsWhileAnotherRefreshIsRunning(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		manager := loadedManager(t, "tt0000001\t7.0\t10\n")
+		entered, finished := make(chan struct{}), make(chan struct{})
+		refresher := NewRefresher(manager, SourceFunc(func(ctx context.Context, _ int64) (Snapshot, error) {
+			close(entered)
+			<-ctx.Done()
+			return Snapshot{}, ctx.Err()
+		}), time.Hour)
+		refresher.lastAttempt.Store(0)
+		owner, release := context.WithCancel(t.Context())
+		defer release()
+		go func() { refresher.Ensure(owner); close(finished) }()
+		<-entered
+		waiter, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+
+		require.ErrorIs(t, refresher.RefreshNow(waiter), context.DeadlineExceeded)
+		release()
+		<-finished
+	})
 }
 
 func TestRefreshHandlerPublishesNewGeneration(t *testing.T) {

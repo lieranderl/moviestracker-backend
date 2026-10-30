@@ -5,7 +5,7 @@ resource "google_cloud_scheduler_job" "jobs" {
   region           = var.region
   name             = each.key
   schedule         = each.value.schedule
-  time_zone        = "Europe/Brussels"
+  time_zone        = lookup(each.value, "time_zone", "Europe/Brussels")
   attempt_deadline = "320s"
 
   retry_config {

@@ -1,9 +1,12 @@
 package catalog
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -61,6 +64,118 @@ func TestRutorClientStopsBlockedRequestWhenContextIsCancelled(t *testing.T) {
 		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(time.Second):
 		t.Fatal("request did not stop after context cancellation")
+	}
+}
+
+func TestRutorClientRejectsOversizedResponse(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(strings.Repeat(" ", 4<<20) + "<html></html>")),
+		}, nil
+	})}
+
+	_, err := NewRutorClient(client).Fetch(context.Background(), "https://tracker.test", false)
+
+	require.ErrorContains(t, err, "response exceeds")
+}
+
+func TestRutorClientAcceptsResponseAtSizeLimit(t *testing.T) {
+	html := `<table><tr class="gai"><td>06 Янв 24</td><td><a href="magnet:?xt=urn:btih:5A64F87D68A7E4DF9F0E3F26B4E4C65C09D6FFAA">magnet</a><a href="/torrent/1">Плохие парни / Bad Boys (1995)</a></td><td>12.5 GB 10 2</td></tr></table>`
+	body := html + strings.Repeat(" ", (4<<20)-len(html))
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+
+	torrents, err := NewRutorClient(client).Fetch(context.Background(), "https://tracker.test", false)
+
+	require.NoError(t, err)
+	require.Len(t, torrents, 1)
+}
+
+func TestRutorClientRejectsChallengePage(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`<html><title>Just a moment</title><body>Verify you are human</body></html>`)),
+		}, nil
+	})}
+
+	_, err := NewRutorClient(client).Fetch(context.Background(), "https://tracker.test", false)
+
+	require.ErrorContains(t, err, "unexpected rutor document")
+}
+
+func TestRutorClientLimitsDecompressedResponse(t *testing.T) {
+	var archive bytes.Buffer
+	writer := gzip.NewWriter(&archive)
+	_, err := io.WriteString(writer, strings.Repeat(" ", 4<<20)+"<html></html>")
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	require.Less(t, archive.Len(), 4<<20)
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		// net/http exposes a gzip-decoded body when it negotiates compression.
+		reader, err := gzip.NewReader(bytes.NewReader(archive.Bytes()))
+		require.NoError(t, err)
+		return &http.Response{StatusCode: http.StatusOK, Body: reader, Uncompressed: true}, nil
+	})}
+
+	_, err = NewRutorClient(client).Fetch(context.Background(), "https://tracker.test", false)
+
+	require.ErrorContains(t, err, "response exceeds")
+}
+
+func TestRutorParserPreservesStructuredPageWithoutRequestedMedia(t *testing.T) {
+	html := `<table><tr class="gai"><td>06 Янв 24</td><td><a href="magnet:?xt=urn:btih:5A64F87D68A7E4DF9F0E3F26B4E4C65C09D6FFAA">magnet</a><a href="/torrent/1">Сериал / Series (2024) [S01]</a></td><td>12.5 GB 10 2</td></tr></table>`
+
+	batch, err := ParseRutorHTMLWithDiagnostics(strings.NewReader(html), false)
+
+	require.NoError(t, err)
+	require.Empty(t, batch.Torrents)
+	require.Zero(t, batch.RejectedParsing)
+}
+
+func TestRunnerDegradesWhenOneTrackerReturnsChallenge(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body := `<html><title>Just a moment</title></html>`
+		if r.URL.Host == "working.test" {
+			body = `<table><tr class="gai"><td>06 Янв 24</td><td><a href="magnet:?xt=urn:btih:5A64F87D68A7E4DF9F0E3F26B4E4C65C09D6FFAA">magnet</a><a href="/torrent/1">Плохие парни / Bad Boys (1995)</a></td><td>12.5 GB 10 2</td></tr></table>`
+		}
+		if r.URL.Host == "tmdb.test" {
+			body = `{"results":[{"id":9737,"title":"Bad Boys","original_title":"Bad Boys","release_date":"1995-04-07"}]}`
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+	repository := &recordingRepository{}
+	runner := Runner{
+		Tracker: NewRutorClient(client), Enricher: NewTMDBClient(client, "https://tmdb.test", "secret"), Repository: repository,
+	}
+
+	result, err := runner.Run(context.Background(), RunConfig{
+		Collection: CollectionLatest, URLs: []string{"https://challenge.test", "https://working.test"},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Failed)
+	require.Equal(t, 1, result.Stored)
+	require.Len(t, repository.saved, 1)
+	require.Equal(t, "9737", repository.saved[0].ID)
+
+	_, err = runner.Run(context.Background(), RunConfig{
+		Collection: CollectionLatest, URLs: []string{"https://challenge.test"},
+	})
+	require.ErrorContains(t, err, "every tracker source failed")
+}
+
+func BenchmarkParseRutorHTML(b *testing.B) {
+	row := `<tr class="gai"><td>06 Янв 24</td><td><a href="magnet:?xt=urn:btih:5A64F87D68A7E4DF9F0E3F26B4E4C65C09D6FFAA">magnet</a><a href="/torrent/1">Плохие парни / Bad Boys (1995)</a></td><td>12.5 GB 10 2</td></tr>`
+	html := "<table>" + strings.Repeat(row, 100) + "</table>"
+	b.ReportAllocs()
+	b.SetBytes(int64(len(html)))
+	for b.Loop() {
+		if _, err := ParseRutorHTML(strings.NewReader(html), false); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 

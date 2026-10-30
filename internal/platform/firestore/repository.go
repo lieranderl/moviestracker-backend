@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"cloud.google.com/go/firestore"
 	"github.com/lieranderl/moviestracker-backend/internal/catalog"
+	"golang.org/x/sync/errgroup"
 )
 
 type Repository struct {
@@ -32,21 +34,36 @@ func (r Repository) Upsert(ctx context.Context, collection catalog.Collection, m
 		return errors.New("firestore client is required")
 	}
 
-	writer := r.Client.BulkWriter(ctx)
-	jobs := make([]*firestore.BulkWriterJob, 0, len(movies))
+	var writes errgroup.Group
+	writes.SetLimit(20)
 	for _, movie := range movies {
-		job, err := writer.Set(r.Client.Collection(string(collection)).Doc(movie.ID), documentData(movie))
-		if err != nil {
-			writer.End()
-			return fmt.Errorf("queue Firestore movie: %w", err)
-		}
-		jobs = append(jobs, job)
+		writes.Go(func() error {
+			return r.upsertMovie(ctx, collection, movie)
+		})
 	}
-	writer.End()
-	for _, job := range jobs {
-		if _, err := job.Results(); err != nil {
-			return fmt.Errorf("commit Firestore movie: %w", err)
+	return writes.Wait()
+}
+
+func (r Repository) upsertMovie(ctx context.Context, collection catalog.Collection, movie catalog.Movie) error {
+	reference := r.Client.Collection(string(collection)).Doc(movie.ID)
+	// A timestamp cannot use Firestore's numeric Maximum transform. Read and
+	// replace atomically so overlapping jobs and SDK conflict retries retain the
+	// newest observed discovery time while still updating the remaining metadata.
+	err := r.Client.RunTransaction(ctx, func(_ context.Context, transaction *firestore.Transaction) error {
+		snapshots, err := transaction.GetAll([]*firestore.DocumentRef{reference})
+		if err != nil {
+			return err
 		}
+		data := documentData(movie)
+		if snapshots[0].Exists() {
+			if previous, ok := snapshots[0].Data()["lasttimefound"].(time.Time); ok && previous.After(movie.LastTimeFound) {
+				data["lasttimefound"] = previous
+			}
+		}
+		return transaction.Set(reference, data)
+	})
+	if err != nil {
+		return fmt.Errorf("commit Firestore movie %s: %w", movie.ID, err)
 	}
 	return nil
 }

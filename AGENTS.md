@@ -129,8 +129,8 @@ make test race cover vet lint vuln build
 
 ## Delivery
 
-- Production changes go through `infra/` (OpenTofu 1.12.6, google providers
-  7.42.0, versions pinned with `=`) and the release-gated GitHub Actions
+- Production changes go through `infra/` (OpenTofu 1.13.2, google providers
+  8.9.0, versions pinned with `=`) and the release-gated GitHub Actions
   workflow. Never apply infrastructure or deploy from a local task, and never
   run `gcloud run services update` / `jobs update` by hand.
 - Images are deployed by digest only. `infra/prod/run.tf` intentionally sets

@@ -38,7 +38,7 @@ func DownloadRatings(ctx context.Context, client *http.Client, sourceURL string,
 		return nil, ParseStats{}, fmt.Errorf("validate ratings gzip: %w", err)
 	}
 	// Parsing to EOF also verifies the gzip checksum.
-	_, stats, err := ParseRatingsWithStats(reader)
+	_, stats, err := ParseRatingsWithStats(ratingsContextReader{ctx: ctx, reader: reader})
 	if err != nil {
 		_ = reader.Close()
 		return nil, stats, fmt.Errorf("validate ratings gzip: %w", err)
