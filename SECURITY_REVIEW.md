@@ -135,7 +135,7 @@ frozen IAM-private IMDb contract; do not recreate the secret or gateway.
 | 4. Tracker challenge pages | Reject documents without known torrent-row structure. Structured pages filtered to zero remain valid; partial-source degradation is preserved. Challenge and pipeline tests pass. |
 | 5. Timestamp regression | Retrying per-document Firestore transactions preserve the greatest stored/incoming discovery timestamp; writes are bounded to 20 concurrent transactions. Real-SDK/in-memory-RPC tests cover out-of-order writes, conflict retries, cancellation, and all stored fields. |
 | 6. Partial rollback | Attempt every available restoration, collect failures, then return nonzero. All four offline workflow tests pass; the original failed two. |
-| 7. Premature freshness alert | Sum native DELTA counts over 25 hours, use zero for absent data, and require 15 minutes of sustained absence. Seven tests against the real PromQL engine cover isolated successes, zero intervals, absence, and grace boundaries. |
+| 7. Premature freshness alert | Sum native DELTA counts over 24h45m, use zero for absent data, and require 15 minutes of sustained absence. The combined 25h respects Cloud Monitoring's limit. IMDb runs at 02:00 UTC daily for a fixed 24h cadence across DST; catalog schedules retain Brussels time. Seven real PromQL tests cover isolated successes, zeros, absence, and grace boundaries; an additional platform-limit check rejects an excessive window. |
 | 8. Retired gateway probe | Remove the gateway branch and both retired variable/secret references from the release workflow. |
 
 The Firestore fix adds one document read and transaction RPCs per movie, with
@@ -149,6 +149,15 @@ is required before adding an explicit empty-results exception.
 
 CI now runs the rollback tests and the freshness-policy tests. The latter uses
 Promtool 3.15.1 downloaded from its official release with a pinned SHA-256.
+
+The automated PR review caught a platform restriction that standalone Promtool
+does not enforce: Cloud Monitoring caps the sum of lookback and retest duration
+at 25 hours for this policy. The first 25h + 15m implementation failed the added
+platform-limit regression; the corrected 24h45m + 15m policy passes it. The IMDb
+schedule moves from 03:00 Brussels to 02:00 UTC (03:00 Brussels in winter,
+04:00 in summer), requiring a reviewed infrastructure plan/apply to take effect.
+See the [Cloud Monitoring restriction](https://docs.cloud.google.com/monitoring/alerts/using-promql#restrictions)
+and [Cloud Scheduler UTC guidance](https://docs.cloud.google.com/scheduler/docs/configuring/cron-job-schedules#time_zone).
 
 ## Version updates
 

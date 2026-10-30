@@ -157,14 +157,14 @@ resource "google_monitoring_alert_policy" "imdb_stale" {
   combiner              = "OR"
   notification_channels = local.notification_channels
   conditions {
-    display_name = "No successful IMDb download within 25 hours plus 15 minutes grace"
+    display_name = "No successful IMDb download within 25 hours including grace"
     condition_prometheus_query_language {
-      # Daily Brussels schedules can be 25 hours apart at the autumn DST change.
-      # Sum the DELTA counts, including an isolated success; missing series are
-      # zero successes. The pending period covers job retries and log ingestion.
+      # IMDb runs daily in UTC. Cloud Monitoring limits the combined lookback
+      # and retest window to 25h: 24h45m + 15m, covering runtime/logging jitter.
+      # Sum DELTA counts, including isolated successes; missing series mean zero.
       query               = <<-EOT
         (
-          sum(sum_over_time({__name__="logging.googleapis.com/user/${google_logging_metric.imdb_download_success.name}", monitored_resource="cloud_run_job", project_id="${var.project_id}", job_name="downloadimdbdata-job"}[25h]))
+          sum(sum_over_time({__name__="logging.googleapis.com/user/${google_logging_metric.imdb_download_success.name}", monitored_resource="cloud_run_job", project_id="${var.project_id}", job_name="downloadimdbdata-job"}[24h45m]))
           or vector(0)
         ) == 0
       EOT

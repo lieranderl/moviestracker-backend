@@ -27,6 +27,18 @@ def main():
     evaluation_interval = re.search(
         r'evaluation_interval\s*=\s*"(\d+)s"', source
     ).group(1)
+    # Promtool checks PromQL semantics, but not Cloud Monitoring's platform
+    # limit. This policy has one range selector and no offset: its lookback and
+    # retest window together must not exceed 25 hours for a log-based metric.
+    ranges = re.findall(r"\[([0-9hms]+)\]", query)
+    if len(ranges) != 1 or re.search(r"\boffset\b", query):
+        raise ValueError("freshness window validation requires one range and no offset")
+    parts = re.findall(r"(\d+)([hms])", ranges[0])
+    if "".join(value + unit for value, unit in parts) != ranges[0]:
+        raise ValueError("unsupported freshness range duration")
+    lookback_seconds = sum(int(value) * {"h": 3600, "m": 60, "s": 1}[unit] for value, unit in parts)
+    if lookback_seconds + int(duration) > 25 * 3600:
+        raise ValueError("Cloud Monitoring lookback plus retest window exceeds 25 hours")
     series = (
         '{__name__="logging.googleapis.com/user/moviestracker/imdb_download_success", '
         'monitored_resource="cloud_run_job", project_id="test-project", '
@@ -43,8 +55,8 @@ def main():
         ("isolated-success-24-hours-ago", "1 _x1599", "24h", False),
         ("isolated-success-just-now", "_x1439 1", "24h", False),
         ("success-surrounded-by-zero-intervals", "0+0x1439 1 0+0x59", "25h", False),
-        ("grace-period-before-firing", "1 _x1599", "25h14m", False),
-        ("stale-after-grace-period", "1 _x1599", "25h16m", True),
+        ("grace-period-before-firing", "1 _x1599", "24h59m", False),
+        ("stale-after-grace-period", "1 _x1599", "25h1m", True),
         ("only-zero-intervals", "0+0x59", "16m", True),
         ("entirely-absent-series", None, "16m", True),
     )

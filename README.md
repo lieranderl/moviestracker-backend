@@ -27,6 +27,7 @@ TMDB JSON, and 64 MiB for streamed IMDb exports. IMDb refresh work has a
 Firestore transactions preserve the newest persisted discovery timestamp across
 overlapping or degraded catalog runs. See [SECURITY_REVIEW.md](SECURITY_REVIEW.md)
 for the review findings, fixes, limits, and verification evidence.
+The IMDb download is scheduled at 02:00 UTC daily; catalog schedules use Brussels time.
 
 ## Known open issues
 
