@@ -45,6 +45,38 @@ OpenTofu plan artifacts under a platform administrator identity. Release safety
 comes from immutable digests, fresh-data jobs, smoke tests, and automatic image
 rollback if the release fails.
 
+## Release pipeline
+
+Pull requests and pushes to `master` run `.github/workflows/ci.yml`: gofmt,
+unit tests with the coverage floor, race tests, parser fuzz smoke, vet,
+govulncheck, golangci-lint, actionlint and zizmor, per-image builds with a
+Trivy gate, OpenTofu fmt/validate, the IMDb freshness alert test, and a Trivy
+IaC scan. Every action is pinned to a commit SHA; Dependabot bumps the pins.
+
+Publishing a GitHub release deploys it (`.github/workflows/release.yml`):
+
+1. **guard** — the tag must be `vMAJOR.MINOR.PATCH` and reachable from
+   `master`; prereleases are skipped.
+2. **verify** — the full CI workflow runs again on the tagged commit.
+3. **build** — each image is built, Trivy-scanned before push, pushed as
+   `release-<tag>`, and recorded by digest with an SBOM artifact.
+4. **deploy** (`production` environment) — snapshots current images, updates
+   the IMDb service and all jobs by digest, runs every job with `--wait`,
+   smoke-tests the private IMDb service with an audience-bound ID token, writes
+   a deployment summary, and restores every snapshot if any step fails.
+
+To ship:
+
+```sh
+git switch master && git pull --ff-only
+gh release create vX.Y.Z --target master --generate-notes
+```
+
+To roll back to an earlier release, open that release's workflow run and use
+**Re-run jobs → deploy**. A re-run job reuses the original run's digest
+artifacts (retained 90 days), so the exact previously scanned images are
+redeployed without a rebuild.
+
 ## Cost controls
 
 - Cloud Run service min instances: 0; max: 2

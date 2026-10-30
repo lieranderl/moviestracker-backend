@@ -9,7 +9,7 @@ GOENV := GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE)
 GOLANGCI_LINT_CACHE ?= $(CACHE_DIR)/golangci-lint
 COVERAGE_THRESHOLD ?= 65
 
-.PHONY: fmt tidy test race cover build vet lint vuln verify clean
+.PHONY: fmt tidy test race cover build vet lint vuln workflows verify clean
 
 fmt:
 	@gofmt -w cmd internal
@@ -47,7 +47,12 @@ lint:
 vuln:
 	@$(GOENV) govulncheck ./...
 
-verify: test race cover vet lint vuln build
+workflows:
+	@$(GOENV) go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+	@pipx run zizmor==1.31.1 --offline --min-severity medium .github/workflows
+	@python3 scripts/test_release_workflow.py
+
+verify: test race cover vet lint vuln workflows build
 
 clean:
 	@rm -rf "$(COVER_DIR)" "$(CACHE_DIR)" "$(CURDIR)/bin"
