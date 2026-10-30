@@ -360,10 +360,21 @@ func parseUint32(value []byte) (uint32, bool) {
 	return uint32(parsed), true
 }
 
+// SnapshotFormat says how a Snapshot body is encoded.
+type SnapshotFormat int
+
+const (
+	// FormatExport is the decompressed IMDb tab-separated export.
+	FormatExport SnapshotFormat = iota
+	// FormatIndex is the binary layout written by EncodeIndex.
+	FormatIndex
+)
+
 // Snapshot carries an undecoded ratings stream. Body is nil when Unchanged is
 // set; otherwise the caller owns it and must close it.
 type Snapshot struct {
 	Body       io.ReadCloser
+	Format     SnapshotFormat
 	Generation int64
 	Unchanged  bool
 }
@@ -407,7 +418,19 @@ func (m *Manager) Refresh(ctx context.Context, source Source) error {
 	if snapshot.Body == nil {
 		return errors.New("ratings snapshot has no body")
 	}
-	index, stats, err := ParseRatingsWithStats(ratingsContextReader{ctx: ctx, reader: snapshot.Body})
+	body := ratingsContextReader{ctx: ctx, reader: snapshot.Body}
+	var (
+		index *Index
+		stats ParseStats
+	)
+	switch snapshot.Format {
+	case FormatExport:
+		index, stats, err = ParseRatingsWithStats(body)
+	case FormatIndex:
+		index, stats, err = DecodeIndex(body)
+	default:
+		err = fmt.Errorf("unknown ratings snapshot format %d", snapshot.Format)
+	}
 	if err != nil {
 		return err
 	}

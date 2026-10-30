@@ -69,13 +69,29 @@ resource "google_logging_metric" "imdb_download_success" {
   }
 }
 
+# The job still succeeds when only the binary index fails: the service serves
+# the export, correctly but with slower cold starts, so nothing else alerts.
+resource "google_logging_metric" "imdb_index_publish_failure" {
+  project = var.project_id
+  name    = "moviestracker/imdb_index_publish_failure"
+  filter  = <<-EOT
+    resource.type="cloud_run_job"
+    resource.labels.job_name="downloadimdbdata-job"
+    jsonPayload.event="imdb_index_publish_failed"
+  EOT
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+  }
+}
+
 resource "google_logging_metric" "imdb_refresh_failure" {
   project = var.project_id
   name    = "moviestracker/imdb_refresh_failure"
   filter  = <<-EOT
     resource.type="cloud_run_revision"
     resource.labels.service_name="get-imdb-rating-service"
-    jsonPayload.event="imdb_index_refresh_failed"
+    jsonPayload.event=("imdb_index_refresh_failed" OR "imdb_index_fallback")
   EOT
   metric_descriptor {
     metric_kind = "DELTA"
@@ -191,6 +207,29 @@ resource "google_monitoring_alert_policy" "imdb_refresh_failures" {
         per_series_aligner = "ALIGN_SUM"
       }
     }
+  }
+}
+
+resource "google_monitoring_alert_policy" "imdb_index_publish_failed" {
+  project               = var.project_id
+  display_name          = "MoviesTracker IMDb binary index not published"
+  combiner              = "OR"
+  notification_channels = local.notification_channels
+  conditions {
+    display_name = "IMDb download published the export without the binary index"
+    condition_threshold {
+      filter          = "resource.type = \"cloud_run_job\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.imdb_index_publish_failure.name}\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_SUM"
+      }
+    }
+  }
+  alert_strategy {
+    auto_close = "1800s"
   }
 }
 

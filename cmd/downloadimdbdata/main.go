@@ -23,6 +23,7 @@ const defaultDownloadTimeout = 5 * time.Minute
 type config struct {
 	bucket         string
 	imdbServiceURL string
+	indexObject    string
 	object         string
 	sourceURL      string
 	timeout        time.Duration
@@ -55,12 +56,28 @@ func run(parent context.Context, getenv func(string) string) error {
 		}
 	}()
 
-	archive, stats, err := imdb.DownloadRatings(ctx, &http.Client{Timeout: config.timeout}, config.sourceURL, imdb.MinSnapshotRows)
+	archive, index, stats, err := imdb.DownloadRatings(ctx, &http.Client{Timeout: config.timeout}, config.sourceURL, imdb.MinSnapshotRows)
 	if err != nil {
 		return err
 	}
-	if err := (gcsstore.RatingsStore{Bucket: config.bucket, Client: client, Object: config.object}).Put(ctx, archive); err != nil {
+	exportGeneration, err := (gcsstore.RatingsStore{Bucket: config.bucket, Client: client, Object: config.object}).Put(ctx, archive)
+	if err != nil {
 		return err
+	}
+	// The index is an accelerator: the service serves the export whenever no
+	// index matches it, so an index failure is logged without failing the run.
+	indexBytes, err := publishIndex(ctx, gcsstore.RatingsStore{
+		Bucket:           config.bucket,
+		Client:           client,
+		ContentType:      "application/octet-stream",
+		Object:           config.indexObject,
+		SourceGeneration: exportGeneration,
+	}, index)
+	if err != nil {
+		slog.Error("IMDb binary index not published; the service will serve the export",
+			"event", "imdb_index_publish_failed",
+			"error", err,
+		)
 	}
 	if config.imdbServiceURL != "" {
 		authenticatedClient, err := idtoken.NewClient(ctx, config.imdbServiceURL)
@@ -74,10 +91,23 @@ func run(parent context.Context, getenv func(string) string) error {
 	slog.Info("IMDb ratings updated",
 		"event", "imdb_ratings_updated",
 		"bytes", len(archive),
+		"index_bytes", indexBytes,
+		"index_object", config.indexObject,
 		"object", config.object,
 		"rows", stats.Rows(),
 	)
 	return nil
+}
+
+func publishIndex(ctx context.Context, store gcsstore.RatingsStore, index *imdb.Index) (int, error) {
+	encoded, err := imdb.MarshalIndex(index)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := store.Put(ctx, encoded); err != nil {
+		return 0, err
+	}
+	return len(encoded), nil
 }
 
 func notifyRefresh(ctx context.Context, client *http.Client, serviceURL string) error {
@@ -105,6 +135,13 @@ func loadConfig(getenv func(string) string) (config, error) {
 	if object == "" {
 		object = "title.ratings.tsv.gz"
 	}
+	indexObject := strings.TrimSpace(getenv("IMDB_INDEX_OBJECT"))
+	if indexObject == "" {
+		indexObject = "title.ratings.idx"
+	}
+	if indexObject == object {
+		return config{}, errors.New("IMDB_INDEX_OBJECT must differ from IMDB_OBJECT")
+	}
 	sourceURL := strings.TrimSpace(getenv("IMDB_SOURCE_URL"))
 	if sourceURL == "" {
 		sourceURL = "https://datasets.imdbws.com/title.ratings.tsv.gz"
@@ -116,6 +153,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 	return config{
 		bucket:         bucket,
 		imdbServiceURL: strings.TrimRight(strings.TrimSpace(getenv("IMDB_SERVICE_URL")), "/"),
+		indexObject:    indexObject,
 		object:         object,
 		sourceURL:      sourceURL,
 		timeout:        timeout,

@@ -31,6 +31,9 @@ resource "google_cloud_run_v2_service" "imdb" {
           memory = "512Mi"
         }
         cpu_idle = true
+        # Scale-to-zero means a caller can wait on a cold start; the boost
+        # shortens the index load without keeping an instance warm.
+        startup_cpu_boost = true
       }
       env {
         name  = "IMDB_BUCKET"
@@ -39,6 +42,10 @@ resource "google_cloud_run_v2_service" "imdb" {
       env {
         name  = "IMDB_OBJECT"
         value = "title.ratings.tsv.gz"
+      }
+      env {
+        name  = "IMDB_INDEX_OBJECT"
+        value = "title.ratings.idx"
       }
       env {
         name  = "IMDB_REFRESH_INTERVAL"
@@ -317,6 +324,10 @@ resource "google_cloud_run_v2_job" "imdb_downloader" {
         env {
           name  = "IMDB_OBJECT"
           value = "title.ratings.tsv.gz"
+        }
+        env {
+          name  = "IMDB_INDEX_OBJECT"
+          value = "title.ratings.idx"
         }
         env {
           name  = "JOB_TIMEOUT"

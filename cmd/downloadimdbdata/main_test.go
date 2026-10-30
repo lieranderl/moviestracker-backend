@@ -18,7 +18,15 @@ func TestLoadConfigDefaults(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "https://datasets.imdbws.com/title.ratings.tsv.gz", config.sourceURL)
 	require.Equal(t, "title.ratings.tsv.gz", config.object)
+	require.Equal(t, "title.ratings.idx", config.indexObject)
 	require.Equal(t, 5*time.Minute, config.timeout)
+}
+
+func TestLoadConfigRejectsIndexOverwritingExport(t *testing.T) {
+	env := map[string]string{"IMDB_BUCKET": "bucket", "IMDB_OBJECT": "ratings", "IMDB_INDEX_OBJECT": "ratings"}
+	_, err := loadConfig(func(key string) string { return env[key] })
+
+	require.ErrorContains(t, err, "IMDB_INDEX_OBJECT")
 }
 
 func TestNotifyRefreshPostsInternalEndpoint(t *testing.T) {
