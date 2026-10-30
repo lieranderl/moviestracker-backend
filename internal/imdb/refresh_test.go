@@ -17,7 +17,7 @@ import (
 
 func loadedManager(t *testing.T, raw string) *Manager {
 	t.Helper()
-	manager := NewManager()
+	manager := NewManager(0)
 	require.NoError(t, manager.Refresh(context.Background(), SourceFunc(func(context.Context, int64) (Snapshot, error) {
 		return Snapshot{Generation: 1, Body: io.NopCloser(strings.NewReader(raw))}, nil
 	})))
@@ -220,6 +220,6 @@ func TestRefreshHandlerRejectsWrongMethodAndHidesSourceError(t *testing.T) {
 }
 
 func TestManagerLenReportsLiveRowCount(t *testing.T) {
-	require.Zero(t, NewManager().Len())
+	require.Zero(t, NewManager(0).Len())
 	require.Equal(t, 2, loadedManager(t, "tt0000001\t7.0\t10\ntt0000002\t8.0\t20\n").Len())
 }

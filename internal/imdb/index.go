@@ -17,6 +17,17 @@ import (
 
 var ErrRatingNotFound = errors.New("imdb rating not found")
 
+// ErrSnapshotTooSmall rejects a ratings export that parsed but holds far fewer
+// rows than the published dataset. A valid gzip of a header-only, truncated, or
+// error-page export would otherwise replace a good index and turn every lookup
+// into a 404 while the service still reports ready.
+var ErrSnapshotTooSmall = errors.New("imdb ratings snapshot has too few rows")
+
+// MinSnapshotRows is the floor production enforces before publishing or
+// serving a snapshot. The export held 1,713,579 rows when this was written; the
+// floor sits well below that so normal churn never trips it.
+const MinSnapshotRows = 1_000_000
+
 // expectedRatingRows pre-sizes the entry slice. The IMDb ratings export held
 // 1,713,579 rows when this was written; sizing above that avoids the doubling
 // growth that would transiently hold both the old and new backing arrays.
@@ -57,7 +68,19 @@ type ParseStats struct {
 	CompactRows  int
 	InputOrdered bool
 	OverflowRows int
+	SkippedRows  int
 	SortApplied  bool
+}
+
+// Rows reports how many rows the parsed index holds.
+func (s ParseStats) Rows() int { return s.CompactRows + s.OverflowRows }
+
+// CheckMinRows reports ErrSnapshotTooSmall when stats fall below minRows.
+func CheckMinRows(stats ParseStats, minRows int) error {
+	if stats.Rows() < minRows {
+		return fmt.Errorf("%w: parsed %d rows, need at least %d", ErrSnapshotTooSmall, stats.Rows(), minRows)
+	}
+	return nil
 }
 
 func ParseRatings(reader io.Reader) (*Index, error) {
@@ -76,7 +99,11 @@ func ParseRatingsWithStats(reader io.Reader) (*Index, ParseStats, error) {
 		// Deliberately operating on Bytes rather than Text: Text would allocate
 		// a string for every one of ~1.7M lines purely to throw it away.
 		id, rating, votes, ok := splitRatingRow(scanner.Bytes())
-		if !ok || bytes.Equal(id, []byte("tconst")) {
+		if !ok {
+			stats.SkippedRows++
+			continue
+		}
+		if bytes.Equal(id, []byte("tconst")) {
 			continue
 		}
 		beforeCompact := len(index.entries)
@@ -265,13 +292,17 @@ func (f SourceFunc) Open(ctx context.Context, generation int64) (Snapshot, error
 type state struct {
 	generation int64
 	index      *Index
+	stats      ParseStats
 }
 
 type Manager struct {
 	current atomic.Pointer[state]
+	minRows int
 }
 
-func NewManager() *Manager { return &Manager{} }
+// NewManager returns a Manager that refuses to swap in a snapshot holding fewer
+// than minRows rows, keeping the current index instead.
+func NewManager(minRows int) *Manager { return &Manager{minRows: minRows} }
 
 func (m *Manager) Refresh(ctx context.Context, source Source) error {
 	snapshot, err := source.Open(ctx, m.Generation())
@@ -287,11 +318,14 @@ func (m *Manager) Refresh(ctx context.Context, source Source) error {
 	if snapshot.Body == nil {
 		return errors.New("ratings snapshot has no body")
 	}
-	index, err := ParseRatings(snapshot.Body)
+	index, stats, err := ParseRatingsWithStats(snapshot.Body)
 	if err != nil {
 		return err
 	}
-	m.current.Store(&state{generation: snapshot.Generation, index: index})
+	if err := CheckMinRows(stats, m.minRows); err != nil {
+		return fmt.Errorf("ratings generation %d: %w", snapshot.Generation, err)
+	}
+	m.current.Store(&state{generation: snapshot.Generation, index: index, stats: stats})
 	return nil
 }
 
@@ -309,6 +343,15 @@ func (m *Manager) Generation() int64 {
 		return 0
 	}
 	return current.generation
+}
+
+// Stats reports how the live index was parsed.
+func (m *Manager) Stats() ParseStats {
+	current := m.current.Load()
+	if current == nil {
+		return ParseStats{}
+	}
+	return current.stats
 }
 
 // Len reports how many rows the live index holds.
