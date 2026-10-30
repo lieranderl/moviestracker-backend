@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.18
 
-ARG GO_IMAGE=golang:1.26.8-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81
+ARG GO_IMAGE=golang:1.26.10-bookworm@sha256:23ce71337b726608afb1bc00986e630a05034a87a87ea1fc2cd1ae5cf33387eb
 FROM ${GO_IMAGE} AS build
 
 WORKDIR /src
