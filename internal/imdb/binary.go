@@ -10,7 +10,6 @@ import (
 	"hash/crc32"
 	"io"
 	"maps"
-	"math"
 	"slices"
 )
 
@@ -24,7 +23,7 @@ import (
 //	compact count   uint32
 //	overflow count  uint32
 //	compact rows    count × (id uint32, votes uint32, rating uint8), ascending id
-//	overflow rows   count × 3 × (uint16 length, bytes): id, rating, votes
+//	overflow rows   count × 3 × (uint32 length, bytes): id, rating, votes
 //	checksum        uint32 CRC-32 (IEEE) of everything before it
 var indexMagic = [8]byte{'M', 'T', 'I', 'M', 'D', 'B', 0, 1}
 
@@ -68,11 +67,13 @@ func EncodeIndex(writer io.Writer, index *Index) error {
 	for _, id := range slices.Sorted(maps.Keys(index.overflow)) {
 		rating := index.overflow[id]
 		for _, field := range []string{rating.ID, rating.Rating, rating.Votes} {
-			if len(field) > math.MaxUint16 {
+			// The parser admits any field within maxOverflowBytes, so the
+			// encoding must too; a narrower length would drop accepted rows.
+			if len(field) > maxOverflowBytes {
 				return fmt.Errorf("encode IMDb index: overflow field of %d bytes", len(field))
 			}
-			var length [2]byte
-			binary.LittleEndian.PutUint16(length[:], uint16(len(field)))
+			var length [4]byte
+			binary.LittleEndian.PutUint32(length[:], uint32(len(field)))
 			if _, err := buffered.Write(length[:]); err != nil {
 				return fmt.Errorf("encode IMDb index: %w", err)
 			}
@@ -154,12 +155,14 @@ func DecodeIndex(reader io.Reader) (*Index, ParseStats, error) {
 
 	for range overflowRows {
 		var fields [3][]byte
+		remaining := maxOverflowBytes - index.overflowBytes
 		for field := range fields {
-			value, err := readIndexField(body)
+			value, err := readIndexField(body, remaining)
 			if err != nil {
 				return nil, ParseStats{}, err
 			}
 			fields[field] = value
+			remaining -= len(value)
 		}
 		id, rating, votes := fields[0], fields[1], fields[2]
 		if !validTitleID(id) || len(rating) == 0 || len(votes) == 0 {
@@ -203,12 +206,18 @@ func DecodeIndex(reader io.Reader) (*Index, ParseStats, error) {
 	return index, ParseStats{CompactRows: compactRows, InputOrdered: true, OverflowRows: overflowRows}, nil
 }
 
-func readIndexField(reader io.Reader) ([]byte, error) {
-	var length [2]byte
+// readIndexField checks the declared length against the remaining overflow
+// budget before allocating, so a forged length cannot force a large allocation.
+func readIndexField(reader io.Reader, remaining int) ([]byte, error) {
+	var length [4]byte
 	if _, err := io.ReadFull(reader, length[:]); err != nil {
 		return nil, invalidIndex("read overflow field: %v", err)
 	}
-	value := make([]byte, binary.LittleEndian.Uint16(length[:]))
+	size := binary.LittleEndian.Uint32(length[:])
+	if int64(size) > int64(remaining) {
+		return nil, invalidIndex("overflow rows exceed %d bytes", maxOverflowBytes)
+	}
+	value := make([]byte, size)
 	if _, err := io.ReadFull(reader, value); err != nil {
 		return nil, invalidIndex("read overflow field: %v", err)
 	}

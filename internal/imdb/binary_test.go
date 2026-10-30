@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"hash/crc32"
 	"io"
+	"math"
 	"strings"
 	"testing"
 
@@ -68,6 +69,25 @@ func TestMarshalIndexProducesDecodableBytes(t *testing.T) {
 	require.Equal(t, encoded(t, mixedRatings), data)
 	_, err = MarshalIndex(nil)
 	require.ErrorContains(t, err, "index is nil")
+}
+
+// The text parser accepts overflow fields up to its scanner and budget limits,
+// so the binary form must carry them rather than block the day's publication.
+func TestIndexRoundTripsOverflowFieldsBeyond64KiB(t *testing.T) {
+	long := strings.Repeat("9", 1<<17)
+	raw := "tt0000001\t" + long + "\t1\n"
+	index, stats, err := ParseRatingsWithStats(strings.NewReader(raw))
+	require.NoError(t, err)
+	require.Equal(t, 1, stats.OverflowRows)
+
+	data, err := MarshalIndex(index)
+	require.NoError(t, err)
+	decoded, _, err := DecodeIndex(bytes.NewReader(data))
+
+	require.NoError(t, err)
+	got, ok := decoded.Lookup("tt0000001")
+	require.True(t, ok)
+	require.Equal(t, long, got.Rating)
 }
 
 func TestEncodeIndexIsDeterministic(t *testing.T) {
@@ -145,16 +165,16 @@ func TestDecodeIndexRejectsOverflowRowsTheParserWouldReject(t *testing.T) {
 		}
 		for _, row := range overflow {
 			for _, field := range row {
-				data = binary.LittleEndian.AppendUint16(data, uint16(len(field)))
+				data = binary.LittleEndian.AppendUint32(data, uint32(len(field)))
 				data = append(data, field...)
 			}
 		}
 		return binary.LittleEndian.AppendUint32(data, crc32.ChecksumIEEE(data))
 	}
-	// Each row fits a uint16 field; together they pass maxOverflowBytes.
+	// Each row is within budget on its own; together they pass maxOverflowBytes.
 	var oversized [][3]string
-	for row := 1; row <= maxOverflowBytes/60000+1; row++ {
-		oversized = append(oversized, [3]string{formatTitleID(uint32(row)), strings.Repeat("9", 60000), "1"})
+	for row := 1; row <= maxOverflowBytes/(1<<20)+1; row++ {
+		oversized = append(oversized, [3]string{formatTitleID(uint32(row)), strings.Repeat("9", 1<<20), "1"})
 	}
 	tests := []struct {
 		name string
@@ -166,6 +186,11 @@ func TestDecodeIndexRejectsOverflowRowsTheParserWouldReject(t *testing.T) {
 		{"shadows compact row", build([]entry{{id: 1, votes: 1, rating: 70}}, [3]string{"tt0000001", "7.25", "1"}), "duplicate title"},
 		{"repeated overflow row", build(nil, [3]string{"tt0000001", "7.25", "1"}, [3]string{"tt0000001", "7.25", "1"}), "duplicate title"},
 		{"overflow budget", build(nil, oversized...), "overflow rows exceed"},
+		{"forged field length", func() []byte {
+			data := build(nil, [3]string{"tt0000001", "7.25", "1"})
+			binary.LittleEndian.PutUint32(data[indexHeaderSize:], math.MaxUint32)
+			return resign(data)
+		}(), "overflow rows exceed"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

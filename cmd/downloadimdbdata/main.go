@@ -60,18 +60,24 @@ func run(parent context.Context, getenv func(string) string) error {
 	if err != nil {
 		return err
 	}
-	encoded, err := imdb.MarshalIndex(index)
+	exportGeneration, err := (gcsstore.RatingsStore{Bucket: config.bucket, Client: client, Object: config.object}).Put(ctx, archive)
 	if err != nil {
 		return err
 	}
-	// The export goes first: the service only prefers an index created no
-	// earlier than the export, so this order is what marks the index current.
-	if err := (gcsstore.RatingsStore{Bucket: config.bucket, Client: client, Object: config.object}).Put(ctx, archive); err != nil {
-		return err
-	}
-	indexStore := gcsstore.RatingsStore{Bucket: config.bucket, Client: client, ContentType: "application/octet-stream", Object: config.indexObject}
-	if err := indexStore.Put(ctx, encoded); err != nil {
-		return err
+	// The index is an accelerator: the service serves the export whenever no
+	// index matches it, so an index failure is logged without failing the run.
+	indexBytes, err := publishIndex(ctx, gcsstore.RatingsStore{
+		Bucket:           config.bucket,
+		Client:           client,
+		ContentType:      "application/octet-stream",
+		Object:           config.indexObject,
+		SourceGeneration: exportGeneration,
+	}, index)
+	if err != nil {
+		slog.Error("IMDb binary index not published; the service will serve the export",
+			"event", "imdb_index_publish_failed",
+			"error", err,
+		)
 	}
 	if config.imdbServiceURL != "" {
 		authenticatedClient, err := idtoken.NewClient(ctx, config.imdbServiceURL)
@@ -85,12 +91,23 @@ func run(parent context.Context, getenv func(string) string) error {
 	slog.Info("IMDb ratings updated",
 		"event", "imdb_ratings_updated",
 		"bytes", len(archive),
-		"index_bytes", len(encoded),
+		"index_bytes", indexBytes,
 		"index_object", config.indexObject,
 		"object", config.object,
 		"rows", stats.Rows(),
 	)
 	return nil
+}
+
+func publishIndex(ctx context.Context, store gcsstore.RatingsStore, index *imdb.Index) (int, error) {
+	encoded, err := imdb.MarshalIndex(index)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := store.Put(ctx, encoded); err != nil {
+		return 0, err
+	}
+	return len(encoded), nil
 }
 
 func notifyRefresh(ctx context.Context, client *http.Client, serviceURL string) error {

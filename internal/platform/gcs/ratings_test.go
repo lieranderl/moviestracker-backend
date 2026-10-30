@@ -54,14 +54,17 @@ func (t *trackedObject) Close() error {
 	return nil
 }
 
-func TestPreferIndexOnlyWhenNotOlderThanExport(t *testing.T) {
-	export := &storage.ObjectAttrs{Created: time.Date(2026, 10, 30, 2, 0, 0, 0, time.UTC)}
+func TestPreferIndexOnlyWhenBuiltFromCurrentExport(t *testing.T) {
+	export := &storage.ObjectAttrs{Generation: 1761789600000000, Created: time.Date(2026, 10, 30, 2, 0, 0, 0, time.UTC)}
+	builtFrom := func(generation string, created time.Time) *storage.ObjectAttrs {
+		return &storage.ObjectAttrs{Created: created, Metadata: map[string]string{SourceGenerationKey: generation}}
+	}
 
 	require.False(t, preferIndex(export, nil), "missing index")
-	require.True(t, preferIndex(export, &storage.ObjectAttrs{Created: export.Created.Add(time.Second)}), "written after the export")
-	require.True(t, preferIndex(export, &storage.ObjectAttrs{Created: export.Created}), "same instant")
-	require.False(t, preferIndex(export, &storage.ObjectAttrs{Created: export.Created.Add(-24 * time.Hour)}),
-		"an index left behind by an older job must not freeze ratings")
+	require.True(t, preferIndex(export, builtFrom("1761789600000000", export.Created.Add(time.Second))), "built from this export")
+	require.False(t, preferIndex(export, builtFrom("1761703200000000", export.Created.Add(time.Minute))),
+		"an overlapping older execution can upload its index last; creation order must not win")
+	require.False(t, preferIndex(export, &storage.ObjectAttrs{Created: export.Created.Add(time.Second)}), "no source recorded")
 }
 
 func TestSourceRejectsMissingConfiguration(t *testing.T) {
@@ -70,6 +73,6 @@ func TestSourceRejectsMissingConfiguration(t *testing.T) {
 }
 
 func TestStoreRejectsMissingConfiguration(t *testing.T) {
-	err := (RatingsStore{}).Put(context.Background(), []byte("archive"))
+	_, err := (RatingsStore{}).Put(context.Background(), []byte("archive"))
 	require.ErrorContains(t, err, "storage client is required")
 }
