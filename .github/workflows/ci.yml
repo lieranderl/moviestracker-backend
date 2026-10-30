@@ -4,6 +4,9 @@ on:
   pull_request:
   push:
     branches: [main, master]
+  # The release workflow calls this file so a tag is deployed only after the
+  # exact gates a pull request must pass, rather than a hand-maintained subset.
+  workflow_call:
 
 permissions:
   contents: read
@@ -19,8 +22,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -44,9 +49,25 @@ jobs:
         run: go vet ./...
       - name: Vulnerability scan
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
-      - uses: golangci/golangci-lint-action@v9.3.0
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.15.0
+
+  workflows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: actionlint
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: zizmor
+        run: pipx run zizmor==1.31.1 --offline --min-severity medium .github/workflows
 
   containers:
     needs: go
@@ -57,9 +78,11 @@ jobs:
       matrix:
         app: [getmovies, getimdbrating, downloadimdbdata]
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: docker/setup-buildx-action@v4.4.1
-      - uses: docker/build-push-action@v7.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           build-args: APP=${{ matrix.app }}
@@ -67,7 +90,7 @@ jobs:
           cache-from: type=gha,scope=ci-${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=ci-${{ matrix.app }}
           tags: moviestracker/${{ matrix.app }}:${{ github.sha }}
-      - uses: aquasecurity/trivy-action@v0.36.0
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: moviestracker/${{ matrix.app }}:${{ github.sha }}
           format: table
@@ -79,8 +102,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: opentofu/setup-opentofu@v2.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
           tofu_version: 1.13.2
       - name: Format
@@ -102,7 +127,7 @@ jobs:
           tar -xzf "${RUNNER_TEMP}/${archive}" -C "$RUNNER_TEMP" --strip-components=1 \
             "prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool"
           python3 scripts/test_imdb_freshness.py --promtool "${RUNNER_TEMP}/promtool"
-      - uses: aquasecurity/trivy-action@v0.36.0
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: config
           scan-ref: infra

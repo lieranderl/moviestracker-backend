@@ -5,7 +5,7 @@ Run workloads in GCP project `moviestracker-f07e2`, region `europe-west1`.
 
 ```
 cmd/getmovies          Rutor -> TMDB -> Firestore catalog job (arg: collection)
-cmd/getimdbrating      constant-time IAM-private IMDb rating HTTP service
+cmd/getimdbrating      constant-time public IMDb rating HTTP service
 cmd/downloadimdbdata   IMDb archive -> Cloud Storage refresh job
 internal/catalog       scraping, parsing, TMDB enrichment, pipeline orchestration
 internal/imdb          ratings index, snapshot manager, download, HTTP handler
@@ -25,9 +25,10 @@ infra/prod             all production resources (GCS-backed state)
 - Persistence is Firestore Native database `moviestracker` via
   `cloud.google.com/go/firestore` with Application Default Credentials.
   Do not add the Firebase Admin SDK, MongoDB, or any database credential.
-- Client-side Firestore access is denied by security rules on purpose. The Qwik
-  frontend reads Firestore server-side as `movies-app@` (`roles/datastore.viewer`).
-  Firebase Auth / Identity Platform is the frontend's concern, not this repo's.
+- Client-side Firestore access is denied by security rules on purpose. The web
+  app (`moviestracker-web`, from the `moviestracker-app` repository) uses
+  Firestore server-side as `movies-web@` (`roles/datastore.user`).
+  Authentication is the web app's concern, not this repo's.
 - Rutor is the only catalog source. Kinozal, Colly, and `GetTorrentsForMovie`
   are removed; the frontend uses JacRed for torrent search.
 - TMDB enrichment scores **every** search result and takes the best above a
@@ -46,10 +47,15 @@ explicitly says otherwise.
 
 - Internal `GET /getimdb?imdb_id=tt<digits>` returns JSON keys `Id`, `Rating`,
   `Votes` (all strings). Status codes: 200, 400 invalid id, 404 unknown id.
-  Callers authenticate to the private Cloud Run service with a Google ID token.
-- API Gateway and `GC_API_KEY` are retired. The IAM-private Cloud Run contract
-  is the only supported IMDb path; do not restore the public gateway, API-key
-  authentication, or new public consumers.
+  The Cloud Run service is **public by decision** (`invoker_iam_disabled`):
+  installed moviestracker-app clients (desktop, NAS, web) call it without
+  credentials. Requiring a token would break every installed client.
+- Because Cloud Run IAM is off, `POST /internal/refresh` authenticates in-app:
+  it accepts only a Google ID token for the service URL issued to
+  `IMDB_REFRESH_INVOKER` (`movies-imdb-downloader@`), and is not registered
+  when that variable is unset. Never expose it without that check.
+- API Gateway and `GC_API_KEY` are retired; do not restore the gateway or
+  API-key authentication.
 - Firestore collections `latesttorrentsmovies`, `hdr10movies`, `dvmovies` and
   the document field names in `internal/catalog.Movie` firestore tags,
   including the irregular `Year` key.
@@ -59,25 +65,29 @@ explicitly says otherwise.
 These are counter-intuitive and have already caused wrong conclusions once.
 Do not "clean them up" without re-verifying.
 
-- **Two TMDB secrets exist and both are live.** `TMDBAPIKEY` is the *backend*
-  key, consumed by all three `getmovies-*-job` workloads and granted to
-  `movies-catalog-jobs@`. `TMDB_API_KEY` is the *frontend* key, consumed by the
-  `moviestracker-app` Cloud Run service. They are not duplicates. Deleting
-  either breaks a live workload.
-- **The complete production Secret Manager inventory is four secrets:**
-  `AUTH_SECRET`, `GOOGLE_SECRET`, `TMDB_API_KEY`, and `TMDBAPIKEY`.
-  `GC_API_KEY`, Firebase configuration secrets, and the legacy Cloud Build
-  GitHub OAuth token are retired and must not be recreated. Any remaining
-  source, workflow, state, or OpenTofu reference is cleanup debt.
-- **`/getimdb` is called by Qwik SSR, not by browsers.** Response caching
-  headers (`Cache-Control`, `ETag`) therefore buy nothing; do not add them as a
-  performance measure.
+- **One TMDB secret, shared.** `TMDB_API_KEY` is read by all three
+  `getmovies-*-job` workloads (as env `TMDBAPIKEY`) and by `moviestracker-web`.
+  The former backend-only secret `TMDBAPIKEY` was deleted; do not recreate it.
+- **The production Secret Manager inventory is five secrets** (checked
+  2026-10-30): `AUTH_SECRET`, `GOOGLE_SECRET`, `JACRED_APIKEY`,
+  `TMDB_API_KEY`, and `WEB_SESSION_KEY`. `AUTH_SECRET` belonged to the retired
+  Qwik frontend and has no consumer. `GC_API_KEY`, Firebase configuration
+  secrets, and the legacy Cloud Build GitHub OAuth token are retired and must
+  not be recreated.
+- **`/getimdb` is called by moviestracker-app clients**: the web server and
+  installed desktop/NAS apps. Measure before adding response caching.
 - **`min_instance_count` stays 0 by decision** (cost). Any freshness mechanism
   must work on the request path, not in a background goroutine.
-- OpenTofu declares the frontend on the dedicated `movies-app@` identity with
-  least-privilege Firestore, Secret Manager, and IMDb Cloud Run access. Legacy
-  MongoDB, Firebase, API Gateway, and gateway-secret resources must converge to
-  the retired state and must not be restored by a future apply.
+- The frontend is `moviestracker-web` on `movies-web@`. The
+  `moviestracker-app` repository's `web.yml` deploys its image and traffic as
+  `movies-web-deployer@` through its own `moviestracker-web` identity pool;
+  OpenTofu here owns its runtime settings, identity, and secrets. The Qwik
+  service `moviestracker-app` and its `movies-app@` identity are retired.
+  Legacy MongoDB, Firebase, API Gateway, and gateway-secret resources must
+  converge to the retired state and must not be restored by a future apply.
+- OpenTofu state was stale from 2026-09-07 until the 2026-10-30
+  reconciliation. `.github/workflows/drift.yml` runs a daily read-only plan;
+  treat a red drift run as a blocker for the next apply.
 - Firestore queries order on `lasttimefound`. Other `Movie` fields are not
   filtered or ordered on, so they are candidates for single-field index
   exemptions.
@@ -139,9 +149,11 @@ make test race cover vet lint vuln build
   Artifact attestations fail with "Feature not available for user-owned private
   repositories", and environment protection rules (required reviewers) are
   rejected by the billing plan. The `attest-build-provenance` step is therefore
-  `continue-on-error: true`. Do not present the release as cryptographically
-  attested or human-gated until the repository is public or org-owned on a
-  supporting plan.
+  `continue-on-error: true`. The repository became public after v3.0.3
+  (checked 2026-10-30), so both features should now be available but are
+  unverified: confirm an attestation persists on the next release before
+  removing `continue-on-error`, and the `production` environment still has no
+  required reviewer configured.
 - `infra/bootstrap` has **no remote backend**; its state is local and
   untracked. Do not run it opportunistically. Treat it as a break-glass
   administrator task and confirm with the maintainer first.

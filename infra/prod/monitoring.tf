@@ -249,8 +249,8 @@ resource "google_monitoring_alert_policy" "frontend_5xx" {
   conditions {
     display_name = "5xx responses exceed 2 percent"
     condition_threshold {
-      filter             = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = \"${google_cloud_run_v2_service.frontend.name}\" AND metric.type = \"run.googleapis.com/request_count\" AND metric.labels.response_code_class = \"5xx\""
-      denominator_filter = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = \"${google_cloud_run_v2_service.frontend.name}\" AND metric.type = \"run.googleapis.com/request_count\""
+      filter             = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = \"${google_cloud_run_v2_service.web.name}\" AND metric.type = \"run.googleapis.com/request_count\" AND metric.labels.response_code_class = \"5xx\""
+      denominator_filter = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = \"${google_cloud_run_v2_service.web.name}\" AND metric.type = \"run.googleapis.com/request_count\""
       comparison         = "COMPARISON_GT"
       threshold_value    = 0.02
       duration           = "300s"
@@ -276,7 +276,7 @@ resource "google_monitoring_alert_policy" "frontend_latency" {
   conditions {
     display_name = "p95 latency exceeds two seconds"
     condition_threshold {
-      filter          = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = \"${google_cloud_run_v2_service.frontend.name}\" AND metric.type = \"run.googleapis.com/request_latencies\""
+      filter          = "resource.type = \"cloud_run_revision\" AND resource.labels.service_name = \"${google_cloud_run_v2_service.web.name}\" AND metric.type = \"run.googleapis.com/request_latencies\""
       comparison      = "COMPARISON_GT"
       threshold_value = 2000
       duration        = "300s"

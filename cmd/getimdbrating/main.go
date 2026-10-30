@@ -15,6 +15,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/lieranderl/moviestracker-backend/internal/imdb"
 	gcsstore "github.com/lieranderl/moviestracker-backend/internal/platform/gcs"
+	"google.golang.org/api/idtoken"
 )
 
 type config struct {
@@ -22,7 +23,12 @@ type config struct {
 	object          string
 	port            string
 	refreshInterval time.Duration
+	// refreshInvoker is the only identity allowed to call /internal/refresh.
+	refreshInvoker string
 }
+
+// tokenValidator verifies a Google-signed ID token minted for audience.
+type tokenValidator func(ctx context.Context, token, audience string) (*idtoken.Payload, error)
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
@@ -64,7 +70,11 @@ func run(ctx context.Context, getenv func(string) string) error {
 	fresh := refresher.Middleware(handler)
 	mux.Handle("GET /getimdb", fresh)
 	mux.Handle("GET /", fresh)
-	mux.Handle("POST /internal/refresh", imdb.NewRefreshHandler(refresher))
+	if config.refreshInvoker != "" {
+		mux.Handle("POST /internal/refresh", requireInvoker(imdb.NewRefreshHandler(refresher), idtoken.Validate, config.refreshInvoker))
+	} else {
+		slog.Warn("IMDB_REFRESH_INVOKER is unset; /internal/refresh is disabled", "event", "imdb_refresh_disabled")
+	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
 		if manager.Generation() == 0 {
@@ -117,5 +127,41 @@ func loadConfig(getenv func(string) string) (config, error) {
 	if parsed, err := time.ParseDuration(strings.TrimSpace(getenv("IMDB_REFRESH_INTERVAL"))); err == nil && parsed > 0 {
 		interval = parsed
 	}
-	return config{bucket: bucket, object: object, port: port, refreshInterval: interval}, nil
+	return config{
+		bucket:          bucket,
+		object:          object,
+		port:            port,
+		refreshInterval: interval,
+		refreshInvoker:  strings.TrimSpace(getenv("IMDB_REFRESH_INVOKER")),
+	}, nil
+}
+
+// requireInvoker admits only Google ID tokens minted for this service's URL
+// and issued to the email service account. The service has Cloud Run invoker
+// IAM disabled so installed clients can read ratings anonymously; the refresh
+// endpoint bypasses the refresh interval and must not be public with it.
+func requireInvoker(next http.Handler, validate tokenValidator, email string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || token == "" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		// The downloader mints the token for the service URL it calls, which
+		// Cloud Run delivers as the Host header.
+		payload, err := validate(r.Context(), token, "https://"+r.Host)
+		if err != nil {
+			slog.Warn("reject IMDb refresh token", "event", "imdb_refresh_rejected", "error", err)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		caller, _ := payload.Claims["email"].(string)
+		verified, _ := payload.Claims["email_verified"].(bool)
+		if caller != email || !verified {
+			slog.Warn("reject IMDb refresh caller", "event", "imdb_refresh_rejected", "caller", caller)
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

@@ -75,8 +75,9 @@ func (r *Refresher) Ensure(ctx context.Context) {
 	}
 }
 
-// RefreshNow synchronously checks the published generation. Cloud Run IAM
-// protects the internal HTTP endpoint that calls this method.
+// RefreshNow synchronously checks the published generation. The service is
+// public, so its caller (cmd/getimdbrating) must authenticate the internal
+// HTTP endpoint that calls this method.
 func (r *Refresher) RefreshNow(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
 	defer cancel()

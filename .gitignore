@@ -11,3 +11,4 @@ bin/
 *.tfvars
 !*.tfvars.example
 crash.log
+*.tfvars.json

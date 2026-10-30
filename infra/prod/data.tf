@@ -62,12 +62,3 @@ resource "google_artifact_registry_repository" "movies" {
 
   depends_on = [google_project_service.required]
 }
-
-resource "google_secret_manager_secret" "tmdb" {
-  project   = var.project_id
-  secret_id = "TMDBAPIKEY"
-  replication {
-    auto {}
-  }
-  depends_on = [google_project_service.required]
-}
