@@ -55,7 +55,7 @@ func run(parent context.Context, getenv func(string) string) error {
 		}
 	}()
 
-	archive, err := imdb.DownloadRatings(ctx, &http.Client{Timeout: config.timeout}, config.sourceURL)
+	archive, stats, err := imdb.DownloadRatings(ctx, &http.Client{Timeout: config.timeout}, config.sourceURL, imdb.MinSnapshotRows)
 	if err != nil {
 		return err
 	}
@@ -75,6 +75,7 @@ func run(parent context.Context, getenv func(string) string) error {
 		"event", "imdb_ratings_updated",
 		"bytes", len(archive),
 		"object", config.object,
+		"rows", stats.Rows(),
 	)
 	return nil
 }

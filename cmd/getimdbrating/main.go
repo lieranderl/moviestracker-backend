@@ -49,7 +49,7 @@ func run(ctx context.Context, getenv func(string) string) error {
 		}
 	}()
 	source := gcsstore.RatingsSource{Bucket: config.bucket, Client: storageClient, Object: config.object}
-	manager := imdb.NewManager()
+	manager := imdb.NewManager(imdb.MinSnapshotRows)
 	if err := manager.Refresh(ctx, source); err != nil {
 		return fmt.Errorf("load initial IMDb index: %w", err)
 	}

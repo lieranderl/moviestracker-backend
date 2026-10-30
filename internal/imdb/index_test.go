@@ -119,10 +119,11 @@ func TestParseRatingsPreservesRowsOutsideCompactEncoding(t *testing.T) {
 func TestParseRatingsSkipsMalformedRows(t *testing.T) {
 	raw := "tconst\taverageRating\tnumVotes\ntt0000001\t5.7\t10\nbroken\ntt0000002\t5.7\t10\t extra\n\ntt0000003\t6.0\t7\n"
 
-	index, err := ParseRatings(strings.NewReader(raw))
+	index, stats, err := ParseRatingsWithStats(strings.NewReader(raw))
 
 	require.NoError(t, err)
 	require.Equal(t, 2, index.Len())
+	require.Equal(t, 3, stats.SkippedRows, "the header is not a skipped row")
 	_, ok := index.Lookup("tt0000002")
 	require.False(t, ok)
 }
@@ -309,7 +310,7 @@ func BenchmarkParseRatingsUnordered(b *testing.B) {
 }
 
 func TestManagerRetainsPreviousSnapshotWhenRefreshFails(t *testing.T) {
-	manager := NewManager()
+	manager := NewManager(0)
 	good := SourceFunc(func(context.Context, int64) (Snapshot, error) {
 		return Snapshot{Generation: 1, Body: body("tt0000001\t7.0\t10\n")}, nil
 	})
@@ -327,7 +328,7 @@ func TestManagerRetainsPreviousSnapshotWhenRefreshFails(t *testing.T) {
 }
 
 func TestManagerSkipsUnchangedGeneration(t *testing.T) {
-	manager := NewManager()
+	manager := NewManager(0)
 	calls := 0
 	source := SourceFunc(func(_ context.Context, currentGeneration int64) (Snapshot, error) {
 		calls++
@@ -346,7 +347,7 @@ func TestManagerSkipsUnchangedGeneration(t *testing.T) {
 // A leaked GCS stream would accumulate across refreshes on a long-lived instance.
 func TestManagerClosesSnapshotBody(t *testing.T) {
 	tracked := &trackedBody{Reader: strings.NewReader("tt0000001\t7.0\t10\n")}
-	manager := NewManager()
+	manager := NewManager(0)
 
 	require.NoError(t, manager.Refresh(context.Background(), SourceFunc(func(context.Context, int64) (Snapshot, error) {
 		return Snapshot{Generation: 3, Body: tracked}, nil
@@ -357,7 +358,7 @@ func TestManagerClosesSnapshotBody(t *testing.T) {
 
 func TestManagerClosesSnapshotBodyWhenParseFails(t *testing.T) {
 	tracked := &trackedBody{Reader: strings.NewReader("tt0000001\t7.0\t10\n"), readErr: errors.New("truncated stream")}
-	manager := NewManager()
+	manager := NewManager(0)
 
 	err := manager.Refresh(context.Background(), SourceFunc(func(context.Context, int64) (Snapshot, error) {
 		return Snapshot{Generation: 3, Body: tracked}, nil
@@ -367,8 +368,46 @@ func TestManagerClosesSnapshotBodyWhenParseFails(t *testing.T) {
 	require.True(t, tracked.closed)
 }
 
+func TestManagerRetainsPreviousSnapshotBelowRowFloor(t *testing.T) {
+	manager := NewManager(2)
+	require.NoError(t, manager.Refresh(context.Background(), SourceFunc(func(context.Context, int64) (Snapshot, error) {
+		return Snapshot{Generation: 1, Body: body("tt0000001\t7.0\t10\ntt0000002\t8.0\t20\n")}, nil
+	})))
+
+	err := manager.Refresh(context.Background(), SourceFunc(func(context.Context, int64) (Snapshot, error) {
+		return Snapshot{Generation: 2, Body: body("tconst\taverageRating\tnumVotes\n")}, nil
+	}))
+
+	require.ErrorIs(t, err, ErrSnapshotTooSmall)
+	require.Equal(t, int64(1), manager.Generation())
+	rating, ok := manager.Lookup("tt0000002")
+	require.True(t, ok)
+	require.Equal(t, "8.0", rating.Rating)
+}
+
+// With no index yet, a too-small snapshot must fail rather than make the service
+// ready with nothing to serve.
+func TestManagerRejectsInitialSnapshotBelowRowFloor(t *testing.T) {
+	manager := NewManager(1)
+
+	err := manager.Refresh(context.Background(), SourceFunc(func(context.Context, int64) (Snapshot, error) {
+		return Snapshot{Generation: 1, Body: body("")}, nil
+	}))
+
+	require.ErrorIs(t, err, ErrSnapshotTooSmall)
+	require.Zero(t, manager.Generation())
+}
+
+func TestManagerStatsDescribeLiveIndex(t *testing.T) {
+	require.Zero(t, NewManager(0).Stats())
+	stats := loadedManager(t, "tt0000002\t8.0\t20\nbroken\ntt0000001\t7.0\t10\n").Stats()
+	require.Equal(t, 2, stats.CompactRows)
+	require.Equal(t, 1, stats.SkippedRows)
+	require.True(t, stats.SortApplied)
+}
+
 func TestManagerRejectsSnapshotWithoutBody(t *testing.T) {
-	manager := NewManager()
+	manager := NewManager(0)
 	err := manager.Refresh(context.Background(), SourceFunc(func(context.Context, int64) (Snapshot, error) {
 		return Snapshot{Generation: 1}, nil
 	}))
