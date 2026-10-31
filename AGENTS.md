@@ -10,7 +10,7 @@ cmd/downloadimdbdata   IMDb archive -> Cloud Storage refresh job
 internal/catalog       scraping, parsing, TMDB enrichment, pipeline orchestration
 internal/imdb          ratings index, snapshot manager, download, HTTP handler
 internal/platform/...   Firestore and Cloud Storage adapters only
-infra/bootstrap        state bucket + GitHub OIDC trust (LOCAL state - see below)
+infra/bootstrap        state bucket, GitHub OIDC trust, CI identities (LOCAL state)
 infra/prod             all production resources (GCS-backed state)
 ```
 
@@ -87,11 +87,11 @@ Do not "clean them up" without re-verifying.
   converge to the retired state and must not be restored by a future apply.
 - OpenTofu state was stale from 2026-09-07 until the reconciliation written on
   2026-10-30 was applied on 2026-10-31; a plan afterwards reported no changes.
-  `.github/workflows/drift.yml` is meant to run a daily read-only plan, but its
-  planner identity, `GCP_PLAN_*` variables, and `PROD_TFVARS_JSON` secret do
-  not exist yet, so it fails at authentication. Until that is set up, run the
-  read-only plan locally before each apply; once it works, treat a red drift
-  run as a blocker for the next apply.
+  `.github/workflows/drift.yml` runs a daily read-only plan. Its planner
+  identity, the `GCP_PLAN_*` variables, and the `PROD_TFVARS_JSON` secret did
+  not exist as of 2026-10-31, so it failed at authentication; they are created
+  by the one-time setup in `infra/bootstrap/README.md`. Once drift is green,
+  treat a red drift run as a blocker for the next apply.
 - Firestore queries order on `lasttimefound`. Other `Movie` fields are not
   filtered or ordered on, so they are candidates for single-field index
   exemptions.
@@ -154,13 +154,38 @@ make test race cover vet lint vuln build
   the `attest-build-provenance` step no longer has `continue-on-error`. The
   `production` environment still has no required reviewer configured; that is a
   repository setting for the maintainer.
-- **Releases move images only.** No workflow runs `tofu apply`; the maintainer
-  applies `infra/prod` by hand. Code that depends on new infrastructure (an env
-  var, IAM) must not be released before that apply: v3.1.0 first failed because
-  `IMDB_REFRESH_INVOKER` from #31 had never been applied.
+- **`infra/prod` is applied by `.github/workflows/infra.yml`**, not by hand,
+  and never by an agent. On every push to master that touches `infra/prod`:
+  - the `plan` job runs as the read-only `movies-infra-planner@` and lists the
+    changes (resource addresses and actions only) in the run summary;
+  - the `apply` job waits for the maintainer's approval in the
+    `infrastructure` environment, re-plans under the state lock as
+    `movies-infra-applier@`, and applies only if the plan's change list hashes
+    to the one that was approved. A mismatch applies nothing; re-run the
+    workflow to plan and approve again.
+  The repository is public, so no workflow may print a plan or apply body:
+  they contain attribute values. Summaries go through
+  `.github/scripts/plan-changes.sh`. Both jobs are skipped until the
+  `GCP_PLAN_*` and `GCP_APPLY_*` variables exist; until the one-time setup is
+  done, the maintainer still applies by hand.
+- **Releases move images only, and wait for infrastructure.** The release
+  `guard` job fails while the latest `infra.yml` run on master is pending
+  approval or failed, because code that depends on new infrastructure (an env
+  var, IAM) must not ship first: v3.1.0 first failed because
+  `IMDB_REFRESH_INVOKER` from #31 had never been applied. So merge the
+  infrastructure, approve its apply, then publish the release.
+- **`movies-infra-applier@` can effectively grant itself anything** in the
+  project, because `infra/prod` manages IAM, service accounts, and secrets.
+  What contains it is its trust: a dedicated pool that accepts only `infra.yml`
+  on `refs/heads/master` running in the `infrastructure` environment, whose
+  required reviewer approves each run. Do not widen that condition, add another
+  workflow to it, or remove the environment's reviewer or branch policy.
+  GitHub creates a missing environment without protection, so the `plan` job
+  fails closed unless `infrastructure` has a required reviewer; keep that check.
 - `infra/bootstrap` has **no remote backend**; its state is local and
-  untracked. Do not run it opportunistically. Treat it as a break-glass
-  administrator task and confirm with the maintainer first.
+  untracked, and it holds the identities the workflows above authenticate as.
+  CI never applies it. Do not run it opportunistically. Treat it as a
+  break-glass administrator task and confirm with the maintainer first.
 - Ask before: enabling or disabling a GCP API, changing IAM, creating or
   deleting a secret, touching Firestore security rules, changing the API
   Gateway config, or altering the WIF trust condition.
@@ -172,7 +197,8 @@ make test race cover vet lint vuln build
   more than `maxFailureRatio` of lookups failed (`internal/catalog/runner.go`).
   Do not reintroduce `errgroup.WithContext` there; cancelling siblings on the
   first error is what previously turned one bad page into a lost run.
-- The production reviewer gate is still unconfigured. Do not silently change
+- The `production` (release) reviewer gate is still unconfigured; the
+  `infrastructure` (apply) gate must always have one. Do not silently change
   adjacent delivery controls while doing an unrelated task; keep changes scoped
   and mention what you noticed.
 - Prefer the standard library. The dependency set is deliberately small:

@@ -80,8 +80,9 @@ resource "google_service_account_iam_member" "github_wif" {
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository_id/${each.value.repository_id}"
 }
 
-# Read-only drift detection. A separate pool keeps master-branch tokens away
-# from the release deployers above, whose bindings match on repository only.
+# Read-only planning for drift detection and for the plan half of the
+# infrastructure workflow. A separate pool keeps master-branch tokens away from
+# the release deployers above, whose bindings match on repository only.
 resource "google_service_account" "planner" {
   project      = var.project_id
   account_id   = "movies-infra-planner"
@@ -120,8 +121,9 @@ resource "google_iam_workload_identity_pool_provider" "github_plan" {
     "google.subject"          = "assertion.sub"
     "attribute.repository_id" = "assertion.repository_id"
   }
-  # Only the drift workflow as merged to master: pull requests cannot run it.
-  attribute_condition = "assertion.repository_id == '${var.backend_repository_id}' && assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'lieranderl/moviestracker-backend/.github/workflows/drift.yml@refs/heads/master'"
+  # Only the drift and infrastructure workflows as merged to master: pull
+  # requests cannot run them.
+  attribute_condition = "assertion.repository_id == '${var.backend_repository_id}' && assertion.ref == 'refs/heads/master' && assertion.workflow_ref in ['lieranderl/moviestracker-backend/.github/workflows/drift.yml@refs/heads/master', 'lieranderl/moviestracker-backend/.github/workflows/infra.yml@refs/heads/master']"
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
   }
@@ -131,6 +133,78 @@ resource "google_service_account_iam_member" "planner_wif" {
   service_account_id = google_service_account.planner.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_plan.name}/attribute.repository_id/${var.backend_repository_id}"
+}
+
+# Applies infra/prod from GitHub Actions. infra/prod manages IAM, service
+# accounts and secrets, so this identity can effectively grant itself anything
+# in the project; what contains it is the trust below. Its own pool accepts only
+# the infrastructure workflow as merged to master, running in the
+# `infrastructure` environment, whose required reviewer must approve each run.
+# It is not granted access to this bootstrap stack's local state.
+resource "google_service_account" "applier" {
+  project      = var.project_id
+  account_id   = "movies-infra-applier"
+  display_name = "MoviesTracker OpenTofu applier"
+}
+
+resource "google_project_iam_member" "applier" {
+  for_each = toset([
+    # One administrative role per resource type infra/prod manages.
+    "roles/artifactregistry.admin",
+    "roles/cloudscheduler.admin",
+    "roles/datastore.owner",
+    "roles/iam.serviceAccountAdmin",
+    # Cloud Run services and jobs run as the application service accounts.
+    "roles/iam.serviceAccountUser",
+    "roles/logging.configWriter",
+    "roles/monitoring.editor",
+    "roles/resourcemanager.projectIamAdmin",
+    "roles/run.admin",
+    "roles/secretmanager.admin",
+    "roles/serviceusage.serviceUsageAdmin",
+    "roles/storage.admin",
+    # Reads that the roles above do not cover, such as the project itself.
+    "roles/viewer",
+  ])
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.applier.email}"
+}
+
+resource "google_storage_bucket_iam_member" "applier_state_writer" {
+  bucket = google_storage_bucket.tofu_state.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.applier.email}"
+}
+
+resource "google_iam_workload_identity_pool" "github_apply" {
+  project                   = var.project_id
+  workload_identity_pool_id = "moviestracker-github-apply"
+  display_name              = "MoviesTracker GitHub apply"
+}
+
+resource "google_iam_workload_identity_pool_provider" "github_apply" {
+  project                            = var.project_id
+  workload_identity_pool_id          = google_iam_workload_identity_pool.github_apply.workload_identity_pool_id
+  workload_identity_pool_provider_id = "github-oidc"
+  display_name                       = "GitHub Actions apply OIDC"
+  attribute_mapping = {
+    "google.subject"          = "assertion.sub"
+    "attribute.repository_id" = "assertion.repository_id"
+  }
+  # The environment claim is present only for a job that declares the
+  # environment, and GitHub issues it only after that environment's protection
+  # rules, including the required reviewer, have passed.
+  attribute_condition = "assertion.repository_id == '${var.backend_repository_id}' && assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'lieranderl/moviestracker-backend/.github/workflows/infra.yml@refs/heads/master' && assertion.environment == 'infrastructure'"
+  oidc {
+    issuer_uri = "https://token.actions.githubusercontent.com"
+  }
+}
+
+resource "google_service_account_iam_member" "applier_wif" {
+  service_account_id = google_service_account.applier.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_apply.name}/attribute.repository_id/${var.backend_repository_id}"
 }
 
 output "state_bucket" {
@@ -155,4 +229,12 @@ output "github_plan_workload_identity_provider" {
 
 output "github_planner_service_account" {
   value = google_service_account.planner.email
+}
+
+output "github_apply_workload_identity_provider" {
+  value = google_iam_workload_identity_pool_provider.github_apply.name
+}
+
+output "github_applier_service_account" {
+  value = google_service_account.applier.email
 }

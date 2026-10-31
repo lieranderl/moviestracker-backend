@@ -1,0 +1,198 @@
+name: Infrastructure apply
+
+# Applies infra/prod after a change to it lands on master. The plan job runs as
+# the read-only planner and lists what would change; the apply job waits for
+# approval in the `infrastructure` environment, re-plans as the applier, and
+# applies only if that plan makes exactly the changes that were approved.
+#
+# This repository is public, so neither job prints plan or apply bodies, which
+# contain attribute values. Only resource addresses, actions and summary lines
+# reach the log and the run summary.
+#
+# Bootstrap trusts only this file on master (see infra/bootstrap). The jobs are
+# skipped until the planner and applier variables exist, so a merge before the
+# one-time setup does not fail.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "infra/prod/**"
+      - ".github/workflows/infra.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never cancel: an interrupted apply leaves a held state lock.
+  group: infra-prod
+  cancel-in-progress: false
+
+env:
+  TOFU_VERSION: 1.13.2
+
+jobs:
+  plan:
+    if: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT != '' && vars.GCP_APPLY_SERVICE_ACCOUNT != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      changes: ${{ steps.plan.outputs.changes }}
+      fingerprint: ${{ steps.plan.outputs.fingerprint }}
+    steps:
+      - name: Require an approval gate on the apply environment
+        # GitHub creates a missing environment without protection rules, and
+        # the applier's trust checks only the environment's name. Refuse to go
+        # on unless `infrastructure` exists with a required reviewer.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Fail closed: on a missing environment gh prints the error body to
+          # stdout, so anything but a positive count blocks.
+          if ! reviewers=$(gh api "repos/${GITHUB_REPOSITORY}/environments/infrastructure" \
+            --jq '[.protection_rules[]? | select(.type == "required_reviewers") | .reviewers[]?] | length' 2>/dev/null); then
+            reviewers=0
+          fi
+          case "$reviewers" in
+            "" | *[!0-9]*) reviewers=0 ;;
+          esac
+          if test "$reviewers" -lt 1; then
+            echo "::error::The infrastructure environment is missing or has no required reviewer; see infra/bootstrap/README.md." >&2
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_ID_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+      - name: Write production variables
+        env:
+          PROD_TFVARS_JSON: ${{ secrets.PROD_TFVARS_JSON }}
+        run: |
+          umask 077
+          printf '%s' "$PROD_TFVARS_JSON" > "${RUNNER_TEMP}/prod.auto.tfvars.json"
+      - name: Initialise
+        run: tofu -chdir=infra/prod init -input=false -lockfile=readonly
+      - name: Plan
+        id: plan
+        run: |
+          set +e
+          # The planner cannot write state, so it cannot take the lock.
+          tofu -chdir=infra/prod plan -lock=false -input=false -no-color \
+            -detailed-exitcode -var-file="${RUNNER_TEMP}/prod.auto.tfvars.json" \
+            -out="${RUNNER_TEMP}/tfplan" > "${RUNNER_TEMP}/plan.txt" 2>&1
+          status=$?
+          set -e
+          if test "$status" -eq 1; then
+            {
+              echo "### Infrastructure plan failed"
+              echo '```'
+              grep -E '^(│ )?Error' "${RUNNER_TEMP}/plan.txt" || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::tofu plan failed; see the run summary." >&2
+            exit 1
+          fi
+          .github/scripts/plan-changes.sh "${RUNNER_TEMP}/tfplan" > "${RUNNER_TEMP}/changes.txt"
+          {
+            echo "### Infrastructure plan"
+            echo
+            if test "$status" -eq 0; then
+              echo "No changes: production matches infra/prod."
+            else
+              echo "Approving the apply job applies exactly these changes:"
+              echo
+              echo '```'
+              cat "${RUNNER_TEMP}/changes.txt"
+              grep -E '^Plan:' "${RUNNER_TEMP}/plan.txt" || true
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "changes=$(test "$status" -eq 2 && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "fingerprint=$(sha256sum < "${RUNNER_TEMP}/changes.txt" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+  apply:
+    needs: plan
+    if: ${{ needs.plan.outputs.changes == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: infrastructure
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_APPLY_WORKLOAD_ID_PROVIDER }}
+          service_account: ${{ vars.GCP_APPLY_SERVICE_ACCOUNT }}
+      - name: Write production variables
+        env:
+          PROD_TFVARS_JSON: ${{ secrets.PROD_TFVARS_JSON }}
+        run: |
+          umask 077
+          printf '%s' "$PROD_TFVARS_JSON" > "${RUNNER_TEMP}/prod.auto.tfvars.json"
+      - name: Initialise
+        run: tofu -chdir=infra/prod init -input=false -lockfile=readonly
+      - name: Re-plan under the state lock
+        env:
+          APPROVED: ${{ needs.plan.outputs.fingerprint }}
+        run: |
+          set +e
+          tofu -chdir=infra/prod plan -input=false -no-color \
+            -var-file="${RUNNER_TEMP}/prod.auto.tfvars.json" \
+            -out="${RUNNER_TEMP}/tfplan" > "${RUNNER_TEMP}/plan.txt" 2>&1
+          status=$?
+          set -e
+          if test "$status" -ne 0; then
+            grep -E '^(│ )?Error' "${RUNNER_TEMP}/plan.txt" >&2 || true
+            echo "::error::tofu plan failed before apply." >&2
+            exit 1
+          fi
+          .github/scripts/plan-changes.sh "${RUNNER_TEMP}/tfplan" > "${RUNNER_TEMP}/changes.txt"
+          actual=$(sha256sum < "${RUNNER_TEMP}/changes.txt" | cut -d' ' -f1)
+          if test "$actual" != "$APPROVED"; then
+            {
+              echo "### Apply refused: production changed since the approved plan"
+              echo
+              echo "Re-run the workflow to plan and approve again. The plan now makes:"
+              echo '```'
+              cat "${RUNNER_TEMP}/changes.txt"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::The plan no longer matches the approved plan; nothing was applied." >&2
+            exit 1
+          fi
+      - name: Apply
+        run: |
+          set +e
+          tofu -chdir=infra/prod apply -input=false -no-color "${RUNNER_TEMP}/tfplan" \
+            > "${RUNNER_TEMP}/apply.txt" 2>&1
+          status=$?
+          set -e
+          {
+            echo "### Infrastructure apply"
+            echo '```'
+            grep -E '^(Apply complete!|│ Error|Error)' "${RUNNER_TEMP}/apply.txt" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if test "$status" -ne 0; then
+            echo "::error::tofu apply failed; see the run summary." >&2
+            exit 1
+          fi
