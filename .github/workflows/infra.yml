@@ -44,6 +44,26 @@ jobs:
       changes: ${{ steps.plan.outputs.changes }}
       fingerprint: ${{ steps.plan.outputs.fingerprint }}
     steps:
+      - name: Require an approval gate on the apply environment
+        # GitHub creates a missing environment without protection rules, and
+        # the applier's trust checks only the environment's name. Refuse to go
+        # on unless `infrastructure` exists with a required reviewer.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Fail closed: on a missing environment gh prints the error body to
+          # stdout, so anything but a positive count blocks.
+          if ! reviewers=$(gh api "repos/${GITHUB_REPOSITORY}/environments/infrastructure" \
+            --jq '[.protection_rules[]? | select(.type == "required_reviewers") | .reviewers[]?] | length' 2>/dev/null); then
+            reviewers=0
+          fi
+          case "$reviewers" in
+            "" | *[!0-9]*) reviewers=0 ;;
+          esac
+          if test "$reviewers" -lt 1; then
+            echo "::error::The infrastructure environment is missing or has no required reviewer; see infra/bootstrap/README.md." >&2
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

@@ -42,6 +42,13 @@ tofu plan -out=bootstrap.tfplan    # expect only additions
 tofu apply bootstrap.tfplan
 ```
 
+Next create the `infrastructure` environment, **before** setting any variable
+below. GitHub creates a missing environment without protection rules, so a
+workflow run in between could apply unattended. Give it a required reviewer,
+limit deployments to `master`, and turn off administrator bypass (repository
+Settings > Environments). `infra.yml` also refuses to plan while the
+environment has no required reviewer.
+
 Then, from the repository root:
 
 ```sh
@@ -58,8 +65,3 @@ digests, but releases move the images and `prod/` ignores them:
 ```sh
 gh secret set PROD_TFVARS_JSON < prod.tfvars.json
 ```
-
-Finally create the `infrastructure` environment with a required reviewer,
-deployments limited to `master`, and administrators unable to bypass it
-(repository Settings > Environments). Without the reviewer, any push to master
-that touches `prod/` would apply unattended.

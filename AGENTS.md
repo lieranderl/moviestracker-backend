@@ -180,6 +180,8 @@ make test race cover vet lint vuln build
   on `refs/heads/master` running in the `infrastructure` environment, whose
   required reviewer approves each run. Do not widen that condition, add another
   workflow to it, or remove the environment's reviewer or branch policy.
+  GitHub creates a missing environment without protection, so the `plan` job
+  fails closed unless `infrastructure` has a required reviewer; keep that check.
 - `infra/bootstrap` has **no remote backend**; its state is local and
   untracked, and it holds the identities the workflows above authenticate as.
   CI never applies it. Do not run it opportunistically. Treat it as a
