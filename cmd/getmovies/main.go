@@ -84,6 +84,7 @@ func run(parent context.Context, args []string, getenv func(string) string) erro
 		"unresolved", result.Unresolved,
 		"failed", result.Failed,
 		"stored", result.Stored,
+		"written", result.Written,
 	)
 	return nil
 }

@@ -3,6 +3,7 @@ package firestorestore
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
 	"sync"
 	"testing"
@@ -26,7 +27,7 @@ import (
 func TestUpsertRejectsMovieWithoutStableDocumentID(t *testing.T) {
 	repository := Repository{}
 
-	err := repository.Upsert(context.Background(), catalog.CollectionLatest, []catalog.Movie{{Title: "Missing ID"}})
+	_, err := repository.Upsert(context.Background(), catalog.CollectionLatest, []catalog.Movie{{Title: "Missing ID"}})
 
 	require.ErrorContains(t, err, "movie id is required")
 }
@@ -40,7 +41,9 @@ func TestUpsertPersistsMovieContract(t *testing.T) {
 		BackdropPath: "/backdrop.jpg", PosterPath: "/poster.jpg", SearchName: "Not stored", SearchAliases: []string{"Not stored"},
 	}
 
-	require.NoError(t, repository.Upsert(context.Background(), catalog.CollectionLatest, []catalog.Movie{movie}))
+	written, err := repository.Upsert(context.Background(), catalog.CollectionLatest, []catalog.Movie{movie})
+	require.NoError(t, err)
+	require.Equal(t, 1, written)
 	snapshot, err := repository.Client.Collection(string(catalog.CollectionLatest)).Doc("9737").Get(context.Background())
 	require.NoError(t, err)
 
@@ -49,6 +52,104 @@ func TestUpsertPersistsMovieContract(t *testing.T) {
 		"genre_ids": []any{int64(28), int64(35)}, "Year": "1995", "release_date": "1995-04-07",
 		"vote_average": "6.8", "vote_count": "123", "backdrop_path": "/backdrop.jpg", "poster_path": "/poster.jpg",
 	}, snapshot.Data())
+}
+
+func TestUpsertSkipsDocumentsThatWouldNotChange(t *testing.T) {
+	found := time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)
+	movie := catalog.Movie{ID: "9737", Title: "Bad Boys", GenreIDs: []int32{28, 35}, LastTimeFound: found, Year: "1995"}
+
+	tests := map[string]struct {
+		movie   catalog.Movie
+		written int
+	}{
+		"identical":             {movie: movie, written: 0},
+		"older discovery":       {movie: withFound(movie, found.Add(-24*time.Hour)), written: 0},
+		"newer discovery":       {movie: withFound(movie, found.Add(24*time.Hour)), written: 1},
+		"changed metadata":      {movie: withTitle(movie, "Bad Boys (Remastered)"), written: 1},
+		"genres become missing": {movie: withGenres(movie, nil), written: 1},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			repository, database := testRepository(t)
+			upsert(t, repository, movie)
+			database.mu.Lock()
+			commits := database.commits
+			database.mu.Unlock()
+
+			written, err := repository.Upsert(context.Background(), catalog.CollectionLatest, []catalog.Movie{test.movie})
+
+			require.NoError(t, err)
+			require.Equal(t, test.written, written)
+			database.mu.Lock()
+			defer database.mu.Unlock()
+			require.Equal(t, commits+test.written, database.commits, "an unchanged movie opens no transaction")
+		})
+	}
+}
+
+func TestUpsertReadsExistingDocumentsInBatches(t *testing.T) {
+	repository, database := testRepository(t)
+	movies := make([]catalog.Movie, 2*readBatchSize+1)
+	for i := range movies {
+		movies[i] = catalog.Movie{ID: fmt.Sprint(i), LastTimeFound: time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)}
+	}
+	written, err := repository.Upsert(context.Background(), catalog.CollectionLatest, movies)
+	require.NoError(t, err)
+	require.Equal(t, len(movies), written)
+
+	written, err = repository.Upsert(context.Background(), catalog.CollectionLatest, movies)
+
+	require.NoError(t, err)
+	require.Zero(t, written)
+	database.mu.Lock()
+	defer database.mu.Unlock()
+	require.Equal(t, 6, database.plainReads, "three batched reads per run")
+	require.Equal(t, len(movies), database.writes, "the second run wrote nothing")
+}
+
+func TestSameDocumentIsExactAboutShape(t *testing.T) {
+	found := time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)
+	data := documentData(catalog.Movie{ID: "1", GenreIDs: []int32{28}, LastTimeFound: found})
+	stored := func(change func(map[string]any)) map[string]any {
+		document := maps.Clone(data)
+		document["genre_ids"] = []any{int64(28)}
+		document["lasttimefound"] = found.In(time.FixedZone("CET", 3600))
+		change(document)
+		return document
+	}
+
+	require.True(t, sameDocument(stored(func(map[string]any) {}), data))
+	require.False(t, sameDocument(stored(func(d map[string]any) { delete(d, "poster_path") }), data), "missing field")
+	require.False(t, sameDocument(stored(func(d map[string]any) { d["extra"] = "x" }), data), "extra field")
+	require.False(t, sameDocument(stored(func(d map[string]any) { d["genre_ids"] = nil }), data), "null against a list")
+	require.False(t, sameDocument(stored(func(d map[string]any) { d["genre_ids"] = []any{int64(35)} }), data), "different genre")
+	require.False(t, sameDocument(stored(func(d map[string]any) { d["genre_ids"] = []any{} }), data), "empty against a list")
+	require.False(t, sameDocument(stored(func(d map[string]any) { d["title"] = int64(1) }), data), "different type")
+
+	empty := documentData(catalog.Movie{ID: "1", GenreIDs: []int32{}, LastTimeFound: found})
+	require.False(t, sameDocument(stored(func(d map[string]any) { d["genre_ids"] = nil }), empty), "null against an empty list")
+	require.True(t, sameDocument(stored(func(d map[string]any) { d["genre_ids"] = []any{} }), empty))
+}
+
+func upsert(t *testing.T, repository *Repository, movie catalog.Movie) {
+	t.Helper()
+	_, err := repository.Upsert(context.Background(), catalog.CollectionLatest, []catalog.Movie{movie})
+	require.NoError(t, err)
+}
+
+func withFound(movie catalog.Movie, found time.Time) catalog.Movie {
+	movie.LastTimeFound = found
+	return movie
+}
+
+func withTitle(movie catalog.Movie, title string) catalog.Movie {
+	movie.Title = title
+	return movie
+}
+
+func withGenres(movie catalog.Movie, genres []int32) catalog.Movie {
+	movie.GenreIDs = genres
+	return movie
 }
 
 func TestDeduplicateMoviesKeepsNewestTMDBDocument(t *testing.T) {
@@ -62,12 +163,11 @@ func TestDeduplicateMoviesKeepsNewestTMDBDocument(t *testing.T) {
 
 func TestUpsertNeverMovesStoredDiscoveryTimeBackwards(t *testing.T) {
 	repository, database := testRepository(t)
-	ctx := context.Background()
 	newer := catalog.Movie{ID: "9737", Title: "Newer", LastTimeFound: time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)}
 	older := catalog.Movie{ID: "9737", Title: "Older", LastTimeFound: time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)}
 
-	require.NoError(t, repository.Upsert(ctx, catalog.CollectionLatest, []catalog.Movie{newer}))
-	require.NoError(t, repository.Upsert(ctx, catalog.CollectionLatest, []catalog.Movie{older}))
+	upsert(t, repository, newer)
+	upsert(t, repository, older)
 
 	document := database.document("projects/test-project/databases/moviestracker/documents/latesttorrentsmovies/9737")
 	require.NotNil(t, document)
@@ -79,7 +179,7 @@ func TestUpsertRetriesWhenConcurrentWriterFindsMovieLater(t *testing.T) {
 	repository, database := testRepository(t)
 	ctx := context.Background()
 	movie := catalog.Movie{ID: "9737", Title: "Initial", LastTimeFound: time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)}
-	require.NoError(t, repository.Upsert(ctx, catalog.CollectionLatest, []catalog.Movie{movie}))
+	upsert(t, repository, movie)
 	name := "projects/test-project/databases/moviestracker/documents/latesttorrentsmovies/9737"
 	concurrent := database.document(name)
 	latest := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
@@ -89,12 +189,15 @@ func TestUpsertRetriesWhenConcurrentWriterFindsMovieLater(t *testing.T) {
 	database.mu.Unlock()
 
 	movie.LastTimeFound = time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
-	require.NoError(t, repository.Upsert(ctx, catalog.CollectionLatest, []catalog.Movie{movie}))
+	written, err := repository.Upsert(ctx, catalog.CollectionLatest, []catalog.Movie{movie})
+	require.NoError(t, err)
 
 	require.Equal(t, latest, database.document(name).Fields["lasttimefound"].GetTimestampValue().AsTime())
+	require.Zero(t, written, "the retry found the concurrent writer had already stored a newer discovery")
 	database.mu.Lock()
 	defer database.mu.Unlock()
-	require.Equal(t, 3, database.commits, "initial write, conflicted write, and successful retry")
+	require.Equal(t, 3, database.commits, "initial write, conflicted write, and the retry's empty commit")
+	require.Equal(t, 1, database.writes)
 }
 
 func TestUpsertHonorsCallerCancellation(t *testing.T) {
@@ -102,7 +205,7 @@ func TestUpsertHonorsCallerCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := repository.Upsert(ctx, catalog.CollectionLatest, []catalog.Movie{{ID: "9737"}})
+	_, err := repository.Upsert(ctx, catalog.CollectionLatest, []catalog.Movie{{ID: "9737"}})
 
 	require.Error(t, err)
 	require.Equal(t, codes.Canceled, status.Code(err))
@@ -115,6 +218,9 @@ type firestoreDatabase struct {
 	documents           map[string]*pb.Document
 	conflictingDocument *pb.Document
 	commits             int
+	// plainReads counts BatchGetDocuments calls made outside a transaction.
+	plainReads int
+	writes     int
 }
 
 func testRepository(t testing.TB) (*Repository, *firestoreDatabase) {
@@ -152,6 +258,11 @@ func (d *firestoreDatabase) BeginTransaction(context.Context, *pb.BeginTransacti
 }
 
 func (d *firestoreDatabase) BatchGetDocuments(request *pb.BatchGetDocumentsRequest, stream pb.Firestore_BatchGetDocumentsServer) error {
+	if request.GetTransaction() == nil {
+		d.mu.Lock()
+		d.plainReads++
+		d.mu.Unlock()
+	}
 	for _, name := range request.Documents {
 		response := &pb.BatchGetDocumentsResponse{ReadTime: timestamppb.Now()}
 		if document := d.document(name); document != nil {
@@ -175,6 +286,7 @@ func (d *firestoreDatabase) apply(writes []*pb.Write) []*pb.WriteResult {
 		document.CreateTime = timestamppb.Now()
 		document.UpdateTime = document.CreateTime
 		d.documents[document.Name] = document
+		d.writes++
 		results[i] = &pb.WriteResult{UpdateTime: document.UpdateTime}
 	}
 	return results
@@ -197,19 +309,28 @@ func (d *firestoreDatabase) Rollback(context.Context, *pb.RollbackRequest) (*emp
 	return &emptypb.Empty{}, nil
 }
 
+// BenchmarkUpsertCatalog measures the steady state of a scheduled run: every
+// movie is already stored with identical data.
 func BenchmarkUpsertCatalog(b *testing.B) {
 	repository, database := testRepository(b)
 	movies := make([]catalog.Movie, 20)
 	for i := range movies {
 		movies[i] = catalog.Movie{ID: fmt.Sprint(i), LastTimeFound: time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)}
 	}
+	if _, err := repository.Upsert(context.Background(), catalog.CollectionLatest, movies); err != nil {
+		b.Fatal(err)
+	}
+	database.mu.Lock()
+	database.commits, database.writes = 0, 0
+	database.mu.Unlock()
 	b.ReportAllocs()
 	for b.Loop() {
-		if err := repository.Upsert(context.Background(), catalog.CollectionLatest, movies); err != nil {
+		if _, err := repository.Upsert(context.Background(), catalog.CollectionLatest, movies); err != nil {
 			b.Fatal(err)
 		}
 	}
 	database.mu.Lock()
-	b.ReportMetric(float64(database.commits)/float64(b.N), "writes/op")
+	b.ReportMetric(float64(database.commits)/float64(b.N), "commits/op")
+	b.ReportMetric(float64(database.writes)/float64(b.N), "writes/op")
 	database.mu.Unlock()
 }
