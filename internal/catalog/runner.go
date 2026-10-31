@@ -50,8 +50,10 @@ type Enricher interface {
 	Enrich(context.Context, Movie) (Movie, error)
 }
 
+// MovieRepository stores resolved movies and reports how many documents it
+// actually wrote, which is fewer than it was given when stored data is current.
 type MovieRepository interface {
-	Upsert(context.Context, Collection, []Movie) error
+	Upsert(context.Context, Collection, []Movie) (int, error)
 }
 
 type RunConfig struct {
@@ -70,6 +72,7 @@ type Result struct {
 	Resolved        int
 	Stored          int
 	Unresolved      int
+	Written         int
 }
 
 type Runner struct {
@@ -108,9 +111,11 @@ func (r Runner) Run(ctx context.Context, config RunConfig) (Result, error) {
 	}
 
 	if r.Repository != nil {
-		if err := r.Repository.Upsert(ctx, config.Collection, movies); err != nil {
+		written, err := r.Repository.Upsert(ctx, config.Collection, movies)
+		if err != nil {
 			return result, err
 		}
+		result.Written = written
 	}
 	result.Stored = len(movies)
 	return result, nil

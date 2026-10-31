@@ -158,6 +158,7 @@ func TestRunnerDegradesWhenOneTrackerReturnsChallenge(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, result.Failed)
 	require.Equal(t, 1, result.Stored)
+	require.Equal(t, 1, result.Written)
 	require.Len(t, repository.saved, 1)
 	require.Equal(t, "9737", repository.saved[0].ID)
 
@@ -396,9 +397,9 @@ type recordingRepository struct {
 	saved []Movie
 }
 
-func (r *recordingRepository) Upsert(_ context.Context, _ Collection, movies []Movie) error {
+func (r *recordingRepository) Upsert(_ context.Context, _ Collection, movies []Movie) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.saved = append(r.saved, movies...)
-	return nil
+	return len(movies), nil
 }

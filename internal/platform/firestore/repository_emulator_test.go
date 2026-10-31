@@ -27,8 +27,12 @@ func TestEmulatorUpsertPreservesNewestDiscoveryAcrossConcurrentJobs(t *testing.T
 	defer func() { _, err := reference.Delete(ctx); require.NoError(t, err) }()
 
 	initial := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
-	require.NoError(t, repository.Upsert(ctx, catalog.CollectionLatest, []catalog.Movie{{ID: id, LastTimeFound: initial}}))
-	require.NoError(t, repository.Upsert(ctx, catalog.CollectionLatest, []catalog.Movie{{ID: id, LastTimeFound: initial.Add(-time.Hour)}}))
+	written, err := repository.Upsert(ctx, catalog.CollectionLatest, []catalog.Movie{{ID: id, LastTimeFound: initial}})
+	require.NoError(t, err)
+	require.Equal(t, 1, written)
+	written, err = repository.Upsert(ctx, catalog.CollectionLatest, []catalog.Movie{{ID: id, LastTimeFound: initial.Add(-time.Hour)}})
+	require.NoError(t, err)
+	require.Zero(t, written, "an older discovery leaves the stored document unchanged")
 	snapshot, err := reference.Get(ctx)
 	require.NoError(t, err)
 	require.Equal(t, initial, snapshot.Data()["lasttimefound"])
@@ -38,7 +42,8 @@ func TestEmulatorUpsertPreservesNewestDiscoveryAcrossConcurrentJobs(t *testing.T
 	for _, offset := range []time.Duration{-2 * time.Hour, 3 * time.Hour, time.Hour, -time.Hour} {
 		go func() {
 			<-start
-			errors <- repository.Upsert(ctx, catalog.CollectionLatest, []catalog.Movie{{ID: id, LastTimeFound: initial.Add(offset)}})
+			_, err := repository.Upsert(ctx, catalog.CollectionLatest, []catalog.Movie{{ID: id, LastTimeFound: initial.Add(offset)}})
+			errors <- err
 		}()
 	}
 	close(start)
