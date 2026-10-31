@@ -33,13 +33,14 @@ The IMDb download is scheduled at 02:00 UTC daily; catalog schedules use Brussel
 
 Tracked but not yet fixed, so the README does not overstate the current state:
 
-- **Build provenance attestation does not work on this repository.** GitHub
-  artifact attestations are unavailable for user-owned private repositories, and
-  environment protection rules (required reviewers) are unavailable on the
-  current billing plan. Releases up to v3.0.3 therefore carry no cryptographic
-  provenance and no human approval gate. The repository is now public, which
-  should enable both; the next release must confirm attestation works, and the
-  `production` environment still needs a required reviewer.
+- **The `production` environment has no required reviewer.** Releases from
+  v3.1.0 carry build provenance attestations (releases up to v3.0.3 do not), but
+  nothing gates a published release on human approval.
+- **Drift detection is not configured.** `drift.yml` fails at authentication
+  until the setup in [infra/README.md](infra/README.md#drift-detection) is done:
+  the `infra/bootstrap` apply, the `GCP_PLAN_*` repository variables, and the
+  `PROD_TFVARS_JSON` secret. Until then, check drift with a local plan before
+  each apply.
 - The IMDb ratings index holds ~1.71M rows in ~22 MiB and peaks at ~61 MiB
   across a refresh, against a 512 MiB Cloud Run limit. The service still
   requests 512 MiB, so there is room to lower it once real usage is observed;

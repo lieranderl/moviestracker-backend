@@ -85,9 +85,13 @@ Do not "clean them up" without re-verifying.
   service `moviestracker-app` and its `movies-app@` identity are retired.
   Legacy MongoDB, Firebase, API Gateway, and gateway-secret resources must
   converge to the retired state and must not be restored by a future apply.
-- OpenTofu state was stale from 2026-09-07 until the 2026-10-30
-  reconciliation. `.github/workflows/drift.yml` runs a daily read-only plan;
-  treat a red drift run as a blocker for the next apply.
+- OpenTofu state was stale from 2026-09-07 until the reconciliation written on
+  2026-10-30 was applied on 2026-10-31; a plan afterwards reported no changes.
+  `.github/workflows/drift.yml` is meant to run a daily read-only plan, but its
+  planner identity, `GCP_PLAN_*` variables, and `PROD_TFVARS_JSON` secret do
+  not exist yet, so it fails at authentication. Until that is set up, run the
+  read-only plan locally before each apply; once it works, treat a red drift
+  run as a blocker for the next apply.
 - Firestore queries order on `lasttimefound`. Other `Movie` fields are not
   filtered or ordered on, so they are candidates for single-field index
   exemptions.
@@ -145,15 +149,15 @@ make test race cover vet lint vuln build
   run `gcloud run services update` / `jobs update` by hand.
 - Images are deployed by digest only. `infra/prod/run.tf` intentionally sets
   `ignore_changes` on container images so releases, not OpenTofu, move them.
-- **Two GitHub platform features the docs used to assume are unavailable here.**
-  Artifact attestations fail with "Feature not available for user-owned private
-  repositories", and environment protection rules (required reviewers) are
-  rejected by the billing plan. The `attest-build-provenance` step is therefore
-  `continue-on-error: true`. The repository became public after v3.0.3
-  (checked 2026-10-30), so both features should now be available but are
-  unverified: confirm an attestation persists on the next release before
-  removing `continue-on-error`, and the `production` environment still has no
-  required reviewer configured.
+- **Build provenance is required.** The repository became public after v3.0.3,
+  and v3.1.0 (2026-10-31) recorded a persisted attestation for every image, so
+  the `attest-build-provenance` step no longer has `continue-on-error`. The
+  `production` environment still has no required reviewer configured; that is a
+  repository setting for the maintainer.
+- **Releases move images only.** No workflow runs `tofu apply`; the maintainer
+  applies `infra/prod` by hand. Code that depends on new infrastructure (an env
+  var, IAM) must not be released before that apply: v3.1.0 first failed because
+  `IMDB_REFRESH_INVOKER` from #31 had never been applied.
 - `infra/bootstrap` has **no remote backend**; its state is local and
   untracked. Do not run it opportunistically. Treat it as a break-glass
   administrator task and confirm with the maintainer first.
@@ -168,10 +172,9 @@ make test race cover vet lint vuln build
   more than `maxFailureRatio` of lookups failed (`internal/catalog/runner.go`).
   Do not reintroduce `errgroup.WithContext` there; cancelling siblings on the
   first error is what previously turned one bad page into a lost run.
-- GitHub attestations and the reviewer gate remain unavailable on the current
-  repository/billing plan. Do not silently change adjacent delivery controls
-  while doing an unrelated task; keep changes scoped and mention what you
-  noticed.
+- The production reviewer gate is still unconfigured. Do not silently change
+  adjacent delivery controls while doing an unrelated task; keep changes scoped
+  and mention what you noticed.
 - Prefer the standard library. The dependency set is deliberately small:
   Firestore, Cloud Storage, goquery, `golang.org/x/sync`, testify. Ask before
   adding a direct dependency.
