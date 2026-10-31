@@ -140,6 +140,13 @@ make test race cover vet lint vuln build
   `infra/prod/monitoring.tf` match stable `jsonPayload.event` fields and catalog
   diagnostic fields. Update code and metric filters atomically when changing
   those event contracts.
+- Ship a **new** log-based metric and any alert policy on it in separate
+  merges. Cloud Monitoring takes several minutes (up to ten) to expose a new
+  `logging.googleapis.com/user/...` metric, and creating the alert before then
+  fails with a 404. On 2026-10-31 the #36 apply created the metric, then
+  failed on the alert; the descriptor became visible about 7.5 minutes later
+  and a second run succeeded. If one apply does both anyway, wait and re-run
+  `infra.yml`: the metric is already in state, so only the alert is retried.
 
 ## Delivery
 

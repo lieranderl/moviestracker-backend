@@ -99,7 +99,7 @@ jobs:
               echo '```'
               grep -E '^(│ )?Error' "${RUNNER_TEMP}/plan.txt" || true
               echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
+            } | tee -a "$GITHUB_STEP_SUMMARY"
             echo "::error::tofu plan failed; see the run summary." >&2
             exit 1
           fi
@@ -117,7 +117,7 @@ jobs:
               grep -E '^Plan:' "${RUNNER_TEMP}/plan.txt" || true
               echo '```'
             fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
           echo "changes=$(test "$status" -eq 2 && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "fingerprint=$(sha256sum < "${RUNNER_TEMP}/changes.txt" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
@@ -175,7 +175,7 @@ jobs:
               echo '```'
               cat "${RUNNER_TEMP}/changes.txt"
               echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
+            } | tee -a "$GITHUB_STEP_SUMMARY"
             echo "::error::The plan no longer matches the approved plan; nothing was applied." >&2
             exit 1
           fi
@@ -191,7 +191,7 @@ jobs:
             echo '```'
             grep -E '^(Apply complete!|│ Error|Error)' "${RUNNER_TEMP}/apply.txt" || true
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
           if test "$status" -ne 0; then
             echo "::error::tofu apply failed; see the run summary." >&2
             exit 1
