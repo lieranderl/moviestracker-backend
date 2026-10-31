@@ -161,7 +161,7 @@ func (c *TMDBClient) doWithRetry(ctx context.Context, req *http.Request) (*http.
 			delay = tmdbRetryDelay(resp, delay)
 			_ = resp.Body.Close()
 		}
-		if err := waitForTMDBRetry(ctx, delay); err != nil {
+		if err := waitForRetry(ctx, delay); err != nil {
 			return nil, err
 		}
 	}
@@ -187,7 +187,7 @@ func tmdbRetryDelay(resp *http.Response, fallback time.Duration) time.Duration {
 	return min(fallback, maximum)
 }
 
-func waitForTMDBRetry(ctx context.Context, delay time.Duration) error {
+func waitForRetry(ctx context.Context, delay time.Duration) error {
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
 	select {
