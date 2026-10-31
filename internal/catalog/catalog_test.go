@@ -211,6 +211,12 @@ func TestGroupMoviesKeepsOriginalThenDistinctRussianAlias(t *testing.T) {
 	require.Equal(t, []string{"Same"}, duplicate[0].SearchAliases)
 }
 
+func TestResultResolvedRatio(t *testing.T) {
+	require.InDelta(t, 0.95, Result{Grouped: 20, Resolved: 19}.ResolvedRatio(), 1e-9)
+	require.Equal(t, 1.0, Result{Grouped: 3, Resolved: 3}.ResolvedRatio())
+	require.Zero(t, Result{}.ResolvedRatio(), "a run that grouped nothing is reported as fully unresolved")
+}
+
 func TestRunnerPassesCallerContextToEveryBoundary(t *testing.T) {
 	cancelled := errors.New("cancelled at tracker")
 	tracker := TrackerFunc(func(ctx context.Context, _ string, _ bool) ([]Torrent, error) {

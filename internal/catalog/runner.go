@@ -75,6 +75,20 @@ type Result struct {
 	Written         int
 }
 
+// ResolvedRatio is the share of grouped movies that matched a TMDB entry. A run
+// that grouped nothing reports zero: it stored nothing, which deserves the same
+// attention as a collapse in matching.
+//
+// Unresolved movies are not failures, so maxFailureRatio never sees them; this
+// ratio is what the catalog_low_resolution alert in infra/prod/monitoring.tf
+// watches to catch a matching regression or a changed TMDB response.
+func (r Result) ResolvedRatio() float64 {
+	if r.Grouped == 0 {
+		return 0
+	}
+	return float64(r.Resolved) / float64(r.Grouped)
+}
+
 type Runner struct {
 	Enricher   Enricher
 	Repository MovieRepository
