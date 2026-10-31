@@ -81,6 +81,7 @@ func run(parent context.Context, args []string, getenv func(string) string) erro
 		"rejected_parsing", result.RejectedParsing,
 		"grouped", result.Grouped,
 		"resolved", result.Resolved,
+		"resolved_ratio", result.ResolvedRatio(),
 		"unresolved", result.Unresolved,
 		"failed", result.Failed,
 		"stored", result.Stored,

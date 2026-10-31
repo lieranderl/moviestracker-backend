@@ -55,6 +55,32 @@ resource "google_logging_metric" "catalog_degraded" {
   }
 }
 
+# Unresolved movies are not failures, so catalog_degraded never sees a collapse
+# in TMDB matching: such a run succeeds while storing far fewer movies. Over the
+# 30 days to 2026-10-31 the lowest resolved_ratio was 0.938
+# (latesttorrentsmovies); HDR10 and DV stayed above 0.98.
+resource "google_logging_metric" "catalog_low_resolution" {
+  project = var.project_id
+  name    = "moviestracker/catalog_job_low_resolution"
+  filter  = <<-EOT
+    resource.type="cloud_run_job"
+    resource.labels.job_name=~"getmovies-.*-job"
+    jsonPayload.event="catalog_pipeline_completed"
+    jsonPayload.resolved_ratio<0.8
+  EOT
+  label_extractors = {
+    job_name = "EXTRACT(resource.labels.job_name)"
+  }
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    labels {
+      key        = "job_name"
+      value_type = "STRING"
+    }
+  }
+}
+
 resource "google_logging_metric" "imdb_download_success" {
   project = var.project_id
   name    = "moviestracker/imdb_download_success"
@@ -151,6 +177,31 @@ resource "google_monitoring_alert_policy" "catalog_degraded" {
     display_name = "Catalog run contains parsing or upstream failures"
     condition_threshold {
       filter          = "resource.type = \"cloud_run_job\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.catalog_degraded.name}\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+      aggregations {
+        alignment_period     = "300s"
+        per_series_aligner   = "ALIGN_SUM"
+        cross_series_reducer = "REDUCE_SUM"
+        group_by_fields      = ["metric.label.job_name"]
+      }
+    }
+  }
+  alert_strategy {
+    auto_close = "1800s"
+  }
+}
+
+resource "google_monitoring_alert_policy" "catalog_low_resolution" {
+  project               = var.project_id
+  display_name          = "MoviesTracker catalog matching collapsed"
+  combiner              = "OR"
+  notification_channels = local.notification_channels
+  conditions {
+    display_name = "Catalog run resolved under 80% of grouped movies"
+    condition_threshold {
+      filter          = "resource.type = \"cloud_run_job\" AND metric.type = \"logging.googleapis.com/user/${google_logging_metric.catalog_low_resolution.name}\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
