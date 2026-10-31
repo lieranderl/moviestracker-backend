@@ -18,17 +18,27 @@ import (
 
 const maxRutorResponseSize = 4 << 20
 
-var btihPattern = regexp.MustCompile(`(?i)btih:([a-f0-9]{40})`)
+var (
+	btihPattern = regexp.MustCompile(`(?i)btih:([a-f0-9]{40})`)
+	yearPattern = regexp.MustCompile(`\((\d{4})\)`)
+	// dvTokenPattern finds the Dolby Vision abbreviations in a lowercased title.
+	// Spelled-out "dolby vision" is checked first with a plain substring search.
+	dvTokenPattern = regexp.MustCompile(`\b(?:dv|dovi)\b`)
+)
+
+// rutorRetryDelay is the pause before the single retry of a failed page fetch.
+const rutorRetryDelay = 2 * time.Second
 
 type RutorClient struct {
-	client *http.Client
+	client     *http.Client
+	retryDelay time.Duration
 }
 
 func NewRutorClient(client *http.Client) *RutorClient {
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
-	return &RutorClient{client: client}
+	return &RutorClient{client: client, retryDelay: rutorRetryDelay}
 }
 
 func (c *RutorClient) Fetch(ctx context.Context, rawURL string, isSeries bool) ([]Torrent, error) {
@@ -36,24 +46,48 @@ func (c *RutorClient) Fetch(ctx context.Context, rawURL string, isSeries bool) (
 	return batch.Torrents, err
 }
 
+// FetchBatch retries a page once when the request fails or Rutor answers with a
+// retryable status, because a single transient error otherwise costs the page
+// until the next scheduled run. A document that parses but is not a result page
+// is not retried: that is a challenge or a changed layout, not a blip.
 func (c *RutorClient) FetchBatch(ctx context.Context, rawURL string, isSeries bool) (TrackerBatch, error) {
+	const maxAttempts = 2
+	var lastErr error
+	for attempt := range maxAttempts {
+		if attempt > 0 {
+			if err := waitForRetry(ctx, c.retryDelay); err != nil {
+				return TrackerBatch{}, err
+			}
+		}
+		batch, retryable, err := c.fetchOnce(ctx, rawURL, isSeries)
+		if err == nil || !retryable {
+			return batch, err
+		}
+		lastErr = err
+	}
+	return TrackerBatch{}, lastErr
+}
+
+func (c *RutorClient) fetchOnce(ctx context.Context, rawURL string, isSeries bool) (TrackerBatch, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return TrackerBatch{}, fmt.Errorf("build rutor request: %w", err)
+		return TrackerBatch{}, false, fmt.Errorf("build rutor request: %w", err)
 	}
 	req.Header.Set("User-Agent", "MoviesTracker/2.0 (+https://moviestracker.net)")
 	resp, err := c.client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return TrackerBatch{}, ctx.Err()
+			return TrackerBatch{}, false, ctx.Err()
 		}
-		return TrackerBatch{}, fmt.Errorf("fetch rutor: %w", err)
+		return TrackerBatch{}, true, fmt.Errorf("fetch rutor: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return TrackerBatch{}, fmt.Errorf("fetch rutor: unexpected status %s", resp.Status)
+		retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError
+		return TrackerBatch{}, retryable, fmt.Errorf("fetch rutor: unexpected status %s", resp.Status)
 	}
-	return ParseRutorHTMLWithDiagnostics(resp.Body, isSeries)
+	batch, err := ParseRutorHTMLWithDiagnostics(resp.Body, isSeries)
+	return batch, false, err
 }
 
 func ParseRutorHTML(reader io.Reader, isSeries bool) ([]Torrent, error) {
@@ -113,6 +147,7 @@ func ParseRutorHTMLWithDiagnostics(reader io.Reader, isSeries bool) (TrackerBatc
 			return
 		}
 		if isSeries != strings.Contains(title, "[") {
+			batch.SkippedSeries++
 			return
 		}
 		batch.Fetched++
@@ -166,13 +201,17 @@ func parseRutorTitle(title string) Torrent {
 	} else {
 		torrent.OriginalName = torrent.RussianName
 	}
-	if match := regexp.MustCompile(`\((\d{4})\)`).FindStringSubmatch(attributes); len(match) == 2 {
+	if match := yearPattern.FindStringSubmatch(attributes); len(match) == 2 {
 		torrent.Year = match[1]
 	}
-	lower := strings.ToLower(" " + attributes + " ")
+	// Flags are read from the whole title: some releases, such as box sets
+	// written "Title / 1999-2021 / ... Dolby Vision", have no parenthesised
+	// attribute section at all.
+	lower := strings.ToLower(" " + title + " ")
 	torrent.K4 = strings.Contains(lower, "2160p")
 	torrent.FHD = strings.Contains(lower, "1080p")
-	torrent.DV = strings.Contains(lower, "dolby vision") || strings.Contains(lower, " dolby ")
+	// A bare "dolby" is not enough: it also names audio, as in "Dolby Atmos".
+	torrent.DV = strings.Contains(lower, "dolby vision") || dvTokenPattern.MatchString(lower)
 	torrent.HDR10Plus = strings.Contains(lower, "hdr10+")
 	torrent.HDR10 = torrent.HDR10Plus || strings.Contains(lower, "hdr10")
 	torrent.HDR = torrent.HDR10 || strings.Contains(lower, " hdr ")

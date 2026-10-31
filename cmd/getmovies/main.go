@@ -79,6 +79,8 @@ func run(parent context.Context, args []string, getenv func(string) string) erro
 		"collection", config.collection,
 		"fetched", result.Fetched,
 		"rejected_parsing", result.RejectedParsing,
+		"rejected_classification", result.RejectedClassification,
+		"skipped_series", result.SkippedSeries,
 		"grouped", result.Grouped,
 		"resolved", result.Resolved,
 		"resolved_ratio", result.ResolvedRatio(),

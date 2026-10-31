@@ -33,7 +33,10 @@ type Tracker interface {
 type TrackerBatch struct {
 	Fetched         int
 	RejectedParsing int
-	Torrents        []Torrent
+	// SkippedSeries counts rows left out because they are the other kind of
+	// release (a series on a movie page, or the reverse).
+	SkippedSeries int
+	Torrents      []Torrent
 }
 
 type DiagnosticTracker interface {
@@ -65,14 +68,18 @@ type RunConfig struct {
 // Result reports what a run actually achieved, so the caller can log the counts
 // and a degraded run is visible rather than indistinguishable from a clean one.
 type Result struct {
-	Failed          int
-	Fetched         int
-	Grouped         int
-	RejectedParsing int
-	Resolved        int
-	Stored          int
-	Unresolved      int
-	Written         int
+	Failed  int
+	Fetched int
+	Grouped int
+	// RejectedClassification counts releases whose title lacks the
+	// collection's format, as decided by Collection.Accepts.
+	RejectedClassification int
+	RejectedParsing        int
+	Resolved               int
+	SkippedSeries          int
+	Stored                 int
+	Unresolved             int
+	Written                int
 }
 
 // ResolvedRatio is the share of grouped movies that matched a TMDB entry. A run
@@ -162,9 +169,16 @@ func (r Runner) fetchAll(ctx context.Context, config RunConfig, result *Result) 
 				failures = append(failures, fmt.Errorf("fetch %s: %w", trackerURL, err))
 				return nil
 			}
-			all = append(all, batch.Torrents...)
+			for _, torrent := range batch.Torrents {
+				if !config.Collection.Accepts(torrent) {
+					result.RejectedClassification++
+					continue
+				}
+				all = append(all, torrent)
+			}
 			result.Fetched += batch.Fetched
 			result.RejectedParsing += batch.RejectedParsing
+			result.SkippedSeries += batch.SkippedSeries
 			return nil
 		})
 	}

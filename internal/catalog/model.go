@@ -22,6 +22,22 @@ func (c Collection) Valid() bool {
 	}
 }
 
+// Accepts reports whether a release belongs in the collection by its own title.
+// The HDR10 and DV collections are fed by Rutor text searches, which match
+// anywhere in a title; requiring the format flag keeps a broadened or changed
+// search from filling them with releases in a different format. HDR10+ counts
+// as HDR10. The latest collection takes every release.
+func (c Collection) Accepts(torrent Torrent) bool {
+	switch c {
+	case CollectionHDR10:
+		return torrent.HDR10
+	case CollectionDV:
+		return torrent.DV
+	default:
+		return true
+	}
+}
+
 type Torrent struct {
 	Date         time.Time
 	DetailsURL   string

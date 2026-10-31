@@ -125,6 +125,134 @@ func TestRutorClientLimitsDecompressedResponse(t *testing.T) {
 	require.ErrorContains(t, err, "response exceeds")
 }
 
+// Titles below are taken from the live Rutor HDR10 and Dolby Vision searches
+// on 2026-10-31; dubbing is credited as "D, P", never as "Dolby".
+func TestParseRutorTitleFormatFlags(t *testing.T) {
+	tests := map[string]struct {
+		title         string
+		dv, hdr10, k4 bool
+	}{
+		"dolby vision and hdr10+": {title: "Плохие парни / Bad Boys (2024) UHD BDRemux 2160p | 4K | HDR10+ | Dolby Vision | D, P", dv: true, hdr10: true, k4: true},
+		"dolby vision profile":    {title: "Фильм / Movie (2025) WEB-DL 2160p | 4K | HDR | Dolby Vision Profile 8 | P", dv: true, k4: true},
+		"dv abbreviation":         {title: "Фильм / Movie (2025) WEB-DL 2160p | HDR10, DV | P", dv: true, hdr10: true, k4: true},
+		"dolby audio is not dv":   {title: "Фильм / Movie (2025) BDRip 1080p | Dolby Atmos | Dolby Digital", dv: false},
+		"dvd is not dv":           {title: "Фильм / Movie (1999) DVD9 | DVDRip", dv: false},
+		"no attribute section":    {title: "Матрица. Квадрология / The Matrix. Quadrology / 1999-2021 / UHD BDRemux 2160p | 4K | HDR | Dolby Vision P8 | D", dv: true, k4: true},
+		"plain hdr10":             {title: "Фильм / Movie (2024) WEB-DL 2160p | HDR10 | P", hdr10: true, k4: true},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := parseRutorTitle(test.title)
+			require.Equal(t, test.dv, got.DV, "DV")
+			require.Equal(t, test.hdr10, got.HDR10, "HDR10")
+			require.Equal(t, test.k4, got.K4, "2160p")
+		})
+	}
+}
+
+func TestCollectionAcceptsOnlyItsFormat(t *testing.T) {
+	plain := Torrent{}
+	hdr10 := Torrent{HDR10: true}
+	dv := Torrent{DV: true}
+
+	require.True(t, CollectionLatest.Accepts(plain))
+	require.True(t, CollectionHDR10.Accepts(hdr10))
+	require.False(t, CollectionHDR10.Accepts(dv))
+	require.True(t, CollectionDV.Accepts(dv))
+	require.False(t, CollectionDV.Accepts(hdr10))
+}
+
+func TestRunnerRejectsReleasesOutsideTheCollectionFormat(t *testing.T) {
+	tracker := TrackerFunc(func(context.Context, string, bool) ([]Torrent, error) {
+		return []Torrent{
+			{Hash: "dv", OriginalName: "Vision", Year: "2024", DV: true},
+			{Hash: "atmos", OriginalName: "Atmos only", Year: "2024"},
+		}, nil
+	})
+	repository := &recordingRepository{}
+
+	result, err := Runner{Tracker: tracker, Repository: repository}.Run(context.Background(), RunConfig{
+		Collection: CollectionDV, URLs: []string{"https://dv.test"},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.RejectedClassification)
+	require.Equal(t, 1, result.Grouped)
+	require.Len(t, repository.saved, 1)
+	require.Equal(t, "Vision", repository.saved[0].SearchName)
+}
+
+func TestRutorClientRetriesTransientFailureOnce(t *testing.T) {
+	page := `<table><tr class="gai"><td>06 Янв 24</td><td><a href="magnet:?xt=urn:btih:5A64F87D68A7E4DF9F0E3F26B4E4C65C09D6FFAA">magnet</a><a href="/torrent/1">Плохие парни / Bad Boys (1995)</a></td><td>12.5 GB 10 2</td></tr></table>`
+	tests := map[string]struct {
+		responses []int
+		transport bool
+		calls     int
+		wantErr   string
+	}{
+		"recovers after 503":       {responses: []int{http.StatusServiceUnavailable, http.StatusOK}, calls: 2},
+		"recovers after 429":       {responses: []int{http.StatusTooManyRequests, http.StatusOK}, calls: 2},
+		"recovers after transport": {responses: []int{0, http.StatusOK}, calls: 2},
+		"gives up after two":       {responses: []int{http.StatusBadGateway, http.StatusBadGateway}, calls: 2, wantErr: "502"},
+		"does not retry 404":       {responses: []int{http.StatusNotFound}, calls: 1, wantErr: "404"},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			var mu sync.Mutex
+			calls := 0
+			client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				mu.Lock()
+				status := test.responses[calls]
+				calls++
+				mu.Unlock()
+				if status == 0 {
+					return nil, errors.New("connection reset")
+				}
+				return &http.Response{StatusCode: status, Status: fmt.Sprintf("%d %s", status, http.StatusText(status)), Body: io.NopCloser(strings.NewReader(page))}, nil
+			})}
+			rutor := NewRutorClient(client)
+			rutor.retryDelay = time.Millisecond
+
+			torrents, err := rutor.Fetch(context.Background(), "https://tracker.test", false)
+
+			require.Equal(t, test.calls, calls)
+			if test.wantErr != "" {
+				require.ErrorContains(t, err, test.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, torrents, 1)
+		})
+	}
+}
+
+func TestRutorClientDoesNotRetryChallengePage(t *testing.T) {
+	calls := 0
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`<html><title>Just a moment</title></html>`))}, nil
+	})}
+
+	_, err := NewRutorClient(client).Fetch(context.Background(), "https://tracker.test", false)
+
+	require.ErrorContains(t, err, "unexpected rutor document")
+	require.Equal(t, 1, calls)
+}
+
+func TestRutorClientStopsRetryWaitOnCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		cancel()
+		return &http.Response{StatusCode: http.StatusServiceUnavailable, Status: "503 Service Unavailable", Body: io.NopCloser(strings.NewReader(""))}, nil
+	})}
+	rutor := NewRutorClient(client)
+	rutor.retryDelay = time.Hour
+
+	_, err := rutor.Fetch(ctx, "https://tracker.test", false)
+
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 func TestRutorParserPreservesStructuredPageWithoutRequestedMedia(t *testing.T) {
 	html := `<table><tr class="gai"><td>06 Янв 24</td><td><a href="magnet:?xt=urn:btih:5A64F87D68A7E4DF9F0E3F26B4E4C65C09D6FFAA">magnet</a><a href="/torrent/1">Сериал / Series (2024) [S01]</a></td><td>12.5 GB 10 2</td></tr></table>`
 
@@ -133,6 +261,7 @@ func TestRutorParserPreservesStructuredPageWithoutRequestedMedia(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, batch.Torrents)
 	require.Zero(t, batch.RejectedParsing)
+	require.Equal(t, 1, batch.SkippedSeries)
 }
 
 func TestRunnerDegradesWhenOneTrackerReturnsChallenge(t *testing.T) {
@@ -236,7 +365,7 @@ func TestRunnerKeepsWorkingTrackerSourcesWhenOneFails(t *testing.T) {
 		if url == "https://broken.test" {
 			return nil, errors.New("502 bad gateway")
 		}
-		return []Torrent{{Hash: url, OriginalName: "Movie " + url, Year: "2024"}}, nil
+		return []Torrent{{Hash: url, OriginalName: "Movie " + url, Year: "2024", DV: true}}, nil
 	})
 	repository := &recordingRepository{}
 	runner := Runner{Tracker: tracker, Repository: repository}
