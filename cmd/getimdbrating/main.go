@@ -42,6 +42,7 @@ func main() {
 }
 
 func run(ctx context.Context, getenv func(string) string) error {
+	started := time.Now()
 	config, err := loadConfig(getenv)
 	if err != nil {
 		return err
@@ -62,6 +63,14 @@ func run(ctx context.Context, getenv func(string) string) error {
 	if err := loadInitialIndex(ctx, manager, source, exportOnly); err != nil {
 		return err
 	}
+	// The startup probe only shows readiness in whole probe periods; this is
+	// the cold-start cost the service itself controls.
+	slog.Info("IMDb index loaded",
+		"event", "imdb_index_loaded",
+		"duration_ms", time.Since(started).Milliseconds(),
+		"generation", manager.Generation(),
+		"rows", manager.Len(),
+	)
 
 	mux := http.NewServeMux()
 	handler := imdb.NewHandler(manager.Lookup)
