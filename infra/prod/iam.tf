@@ -62,9 +62,10 @@ resource "google_secret_manager_secret_iam_member" "catalog_tmdb_api_key" {
 
 locals {
   # Every runtime secret in the project. Values are written out of band; only
-  # the containers are managed here. AUTH_SECRET belonged to the retired Qwik
-  # frontend and has no consumer.
-  runtime_secret_ids = toset(["AUTH_SECRET", "GOOGLE_SECRET", "JACRED_APIKEY", "TMDB_API_KEY", "WEB_SESSION_KEY"])
+  # the containers are managed here. AUTH_SECRET, the retired Qwik frontend's
+  # session secret, had no consumer and was removed on 2026-10-31; do not
+  # recreate it.
+  runtime_secret_ids = toset(["GOOGLE_SECRET", "JACRED_APIKEY", "TMDB_API_KEY", "WEB_SESSION_KEY"])
   web_secret_ids     = toset(["GOOGLE_SECRET", "JACRED_APIKEY", "TMDB_API_KEY", "WEB_SESSION_KEY"])
 }
 

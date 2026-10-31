@@ -68,12 +68,25 @@ Do not "clean them up" without re-verifying.
 - **One TMDB secret, shared.** `TMDB_API_KEY` is read by all three
   `getmovies-*-job` workloads (as env `TMDBAPIKEY`) and by `moviestracker-web`.
   The former backend-only secret `TMDBAPIKEY` was deleted; do not recreate it.
-- **The production Secret Manager inventory is five secrets** (checked
-  2026-10-30): `AUTH_SECRET`, `GOOGLE_SECRET`, `JACRED_APIKEY`,
-  `TMDB_API_KEY`, and `WEB_SESSION_KEY`. `AUTH_SECRET` belonged to the retired
-  Qwik frontend and has no consumer. `GC_API_KEY`, Firebase configuration
-  secrets, and the legacy Cloud Build GitHub OAuth token are retired and must
-  not be recreated.
+- **The production Secret Manager inventory is four secrets**:
+  `GOOGLE_SECRET`, `JACRED_APIKEY`, `TMDB_API_KEY`, and `WEB_SESSION_KEY`, all
+  read by `moviestracker-web`, with `TMDB_API_KEY` also read by the catalog
+  jobs. `AUTH_SECRET` (the retired Qwik frontend's, no consumer) was removed
+  from `infra/prod` on 2026-10-31 and is deleted by that change's approved
+  apply. `AUTH_SECRET`, `GC_API_KEY`, Firebase configuration secrets, and the
+  legacy Cloud Build GitHub OAuth token are retired and must not be recreated.
+- **Legacy Qwik-era identities are disabled, pending deletion** (2026-10-31).
+  None is managed by OpenTofu, and nothing in production runs as them:
+  - the `github-actions` Workload Identity pool, which trusted every workflow
+    and branch of the public `lieranderl/qwik-moviestracker` repository by name;
+  - `github-actions-deployer@`, reachable through that pool, which held
+    `run.admin`, `iam.serviceAccountUser`, and `secretmanager.secretAccessor`;
+  - `github-action-517786739@`, which held Firebase Auth/Hosting admin through
+    a user-managed JSON key created on 2022-10-29 (also disabled).
+  If nothing breaks by 2026-11-07, delete all three (deleted pools and service
+  accounts stay restorable for 30 days). Do not re-enable them; new GitHub
+  trust belongs in `infra/bootstrap`. The `API_GATEWAY_URL` repository
+  variable was removed on the same day.
 - **`/getimdb` is called by moviestracker-app clients**: the web server and
   installed desktop/NAS apps. Measure before adding response caching.
 - **`min_instance_count` stays 0 by decision** (cost). Any freshness mechanism
