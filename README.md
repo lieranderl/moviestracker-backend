@@ -1,83 +1,50 @@
 # MoviesTracker Backend
 
-One Go module containing the active MoviesTracker backend workloads:
+Go backend for MoviesTracker, running on Cloud Run in GCP.
 
-- `cmd/getmovies`: Rutor → TMDB → Firestore catalog job
-- `cmd/getimdbrating`: constant-time IMDb lookup HTTP service
-- `cmd/downloadimdbdata`: IMDb archive → Cloud Storage refresh job
+| Workload | Purpose |
+| --- | --- |
+| `cmd/getmovies` | Job: scrapes Rutor, enriches with TMDB, writes the catalog to Firestore |
+| `cmd/getimdbrating` | Public HTTP service: `GET /getimdb?imdb_id=tt…` returns an IMDb rating |
+| `cmd/downloadimdbdata` | Job: refreshes the IMDb ratings dataset in Cloud Storage daily |
 
-Kinozal, MongoDB, Firebase Admin, Colly, the custom TMDB client, and the old
-GetTorrentsForMovie service are intentionally removed. The web app uses JacRed for
-torrent search.
+The web frontend (`moviestracker-web`) lives in the `moviestracker-app`
+repository and reads the catalog from Firestore.
 
-## Runtime architecture
+## Layout
 
-- Go 1.27.3, context-aware `net/http`, goquery
-- Firestore Native database `moviestracker` in `europe-west1`
-- Cloud Storage generation-aware immutable IMDb index, streamed and refreshed by
-  an authenticated downloader callback, with request-path refresh as fallback
-- Cloud Run service/jobs with dedicated identities and scale-to-zero defaults
-- OpenTofu 1.13.2 and Google providers 8.9.0
-- GitHub release workflow with OIDC, image scans, SBOMs, digest deployments,
-  fresh-data jobs, smoke checks, and automatic image rollback
-
-Upstream responses have decoded-size limits: 4 MiB for Rutor HTML, 1 MiB for
-TMDB JSON, and 64 MiB for streamed IMDb exports. IMDb refresh work has a
-10-second request-derived deadline; failures retain the current index.
-Firestore transactions preserve the newest persisted discovery timestamp across
-overlapping or degraded catalog runs. See [SECURITY_REVIEW.md](SECURITY_REVIEW.md)
-for the review findings, fixes, limits, and verification evidence.
-The IMDb download is scheduled at 02:00 UTC daily; catalog schedules use Brussels time.
-
-## Known open issues
-
-Tracked but not yet fixed, so the README does not overstate the current state:
-
-- **The `production` environment has no required reviewer.** Releases from
-  v3.1.0 carry build provenance attestations (releases up to v3.0.3 do not), but
-  nothing gates a published release on human approval.
-- **Drift detection is not configured.** `drift.yml` fails at authentication
-  until the setup in [infra/README.md](infra/README.md#drift-detection) is done:
-  the `infra/bootstrap` apply, the `GCP_PLAN_*` repository variables, and the
-  `PROD_TFVARS_JSON` secret. Until then, check drift with a local plan before
-  each apply.
-- The IMDb ratings index holds ~1.71M rows in ~22 MiB and peaks at ~61 MiB
-  across a refresh, against a 512 MiB Cloud Run limit. The service still
-  requests 512 MiB, so there is room to lower it once real usage is observed;
-  that needs an OpenTofu apply.
-- The alias matcher and degraded-run alert require a production observation
-  window before their resolution and false-positive rates can be compared with
-  the checked-in corpus and previous production baseline.
-
-## Local verification
-
-```sh
-make test
-make race
-make cover
-make vet
-make lint
-make vuln
-make build
-python3 scripts/test_release_workflow.py
+```
+cmd/            entry points for the three workloads
+internal/       catalog pipeline, IMDb index, Firestore/GCS adapters
+infra/          OpenTofu: bootstrap (CI identities) and prod (all resources)
+.github/        CI, release, infrastructure apply, and drift workflows
 ```
 
-With Promtool 3.15.1 installed, `python3 scripts/test_imdb_freshness.py` tests the
-actual alert expression offline. CI downloads and checksum-verifies that tool.
+## Development
 
-Firestore and Cloud Storage use Application Default Credentials. Use emulators
-for integration tests; no database credential is supported.
+Requires Go 1.27. Copy `.env.example` to `.env` for local runs; cloud access
+uses Application Default Credentials.
 
-## Configuration
+```sh
+make verify
+```
 
-Copy `.env.example` to `.env` for local use. Required production secrets live
-in Secret Manager and are attached only to the workload that needs them.
-`TMDBAPIKEY` (from the `TMDB_API_KEY` secret) contains the TMDB API Read Access Token; catalog jobs send it in
-the `Authorization: Bearer <token>` header.
-Catalog enrichment concurrency defaults to 10 and is capped at 20 through
-`ENRICHER_CONCURRENCY`.
+Tests are offline and never call Rutor, TMDB, IMDb, Firestore, or Cloud Storage.
 
-## Infrastructure and release
+## Deployment
 
-See [`infra/README.md`](infra/README.md). Production must not be changed with
-the removed local `gcloud_deploy.sh` paths.
+Production changes are made only through GitHub Actions:
+
+- **Infrastructure**: changes to `infra/prod` merged to `master` are planned and,
+  after approval, applied by `infra.yml`.
+- **Code**: publishing a GitHub release builds, attests, and deploys images by
+  digest via `release.yml`. Apply infrastructure before releasing code that
+  depends on it.
+
+See [infra/README.md](infra/README.md) for details.
+
+## More
+
+- [AGENTS.md](AGENTS.md): architecture rules, frozen contracts, and limits
+- [CONTRIBUTING.md](CONTRIBUTING.md): contribution guide
+- [SECURITY_REVIEW.md](SECURITY_REVIEW.md): security review and findings
