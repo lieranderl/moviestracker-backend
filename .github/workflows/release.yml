@@ -22,6 +22,9 @@ jobs:
     if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,6 +44,31 @@ jobs:
           # Only reviewed, merged code may reach production.
           if ! git merge-base --is-ancestor "refs/tags/${TAG}" origin/master; then
             echo "::error::Release tag '${TAG}' is not reachable from master" >&2
+            exit 1
+          fi
+      - name: Require infrastructure to be applied
+        # Code that needs new infrastructure must not ship before it is applied:
+        # v3.1.0 first failed because IMDB_REFRESH_INVOKER had never been
+        # applied. Skipped until the infrastructure workflow is set up.
+        if: ${{ vars.GCP_APPLY_SERVICE_ACCOUNT != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow infra.yml --branch master \
+            --limit 1 --json status,conclusion,url --jq '.[0] // empty')
+          if test -z "$latest"; then
+            exit 0
+          fi
+          status=$(printf '%s' "$latest" | jq -r '.status')
+          conclusion=$(printf '%s' "$latest" | jq -r '.conclusion')
+          url=$(printf '%s' "$latest" | jq -r '.url')
+          if test "$status" != "completed"; then
+            echo "::error::The infrastructure workflow is still ${status} (approval pending?): ${url}" >&2
+            exit 1
+          fi
+          # A run skipped before the one-time setup has nothing to apply.
+          if test "$conclusion" != "success" && test "$conclusion" != "skipped"; then
+            echo "::error::The last infrastructure run ended in ${conclusion}; apply infra/prod first: ${url}" >&2
             exit 1
           fi
 

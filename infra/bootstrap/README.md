@@ -18,3 +18,48 @@ their exact Cloud Run and service-account permissions are attached in `prod/`.
 Neither can change infrastructure, IAM, secrets, databases, monitoring,
 schedulers, APIs, or OpenTofu state. Never add application service accounts to
 the state bucket.
+
+## CI identities for `infra/prod`
+
+The stack also creates two identities that `.github/workflows/` use, each in
+its own Workload Identity pool that trusts only specific workflow files on
+`refs/heads/master`:
+
+| Identity | Pool | Trusted workflows | Can |
+| --- | --- | --- | --- |
+| `movies-infra-planner@` | `moviestracker-github-plan` | `drift.yml`, `infra.yml` | read the project and the state (`roles/viewer`, `roles/iam.securityReviewer`) |
+| `movies-infra-applier@` | `moviestracker-github-apply` | `infra.yml` in the `infrastructure` environment | administer every resource type in `prod/`, write the state |
+
+The applier can effectively grant itself anything in the project, so the
+`infrastructure` environment's required reviewer is the control that matters.
+
+### One-time setup
+
+Run as a project owner, from this directory:
+
+```sh
+tofu plan -out=bootstrap.tfplan    # expect only additions
+tofu apply bootstrap.tfplan
+```
+
+Then, from the repository root:
+
+```sh
+gh variable set GCP_PLAN_WORKLOAD_ID_PROVIDER --body "$(tofu -chdir=infra/bootstrap output -raw github_plan_workload_identity_provider)"
+gh variable set GCP_PLAN_SERVICE_ACCOUNT --body "$(tofu -chdir=infra/bootstrap output -raw github_planner_service_account)"
+gh variable set GCP_APPLY_WORKLOAD_ID_PROVIDER --body "$(tofu -chdir=infra/bootstrap output -raw github_apply_workload_identity_provider)"
+gh variable set GCP_APPLY_SERVICE_ACCOUNT --body "$(tofu -chdir=infra/bootstrap output -raw github_applier_service_account)"
+```
+
+Store the production variables as JSON in the `PROD_TFVARS_JSON` secret. The
+keys are those of `prod/terraform.tfvars.example`; `images` must still be valid
+digests, but releases move the images and `prod/` ignores them:
+
+```sh
+gh secret set PROD_TFVARS_JSON < prod.tfvars.json
+```
+
+Finally create the `infrastructure` environment with a required reviewer,
+deployments limited to `master`, and administrators unable to bypass it
+(repository Settings > Environments). Without the reviewer, any push to master
+that touches `prod/` would apply unattended.
