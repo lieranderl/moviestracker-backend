@@ -55,11 +55,16 @@ resource "google_cloud_run_v2_service" "imdb" {
         name  = "IMDB_REFRESH_INVOKER"
         value = google_service_account.imdb_downloader.email
       }
+      # Cloud Run holds requests until this probe passes, so its cadence, not
+      # the index load, set the cold start: every start before v3.1.0 and after
+      # it passed on the second attempt, about 4 s in. Probing every second
+      # admits traffic within a second of the index loading. The 60 s failure
+      # budget is unchanged.
       startup_probe {
-        initial_delay_seconds = 1
-        timeout_seconds       = 2
-        period_seconds        = 3
-        failure_threshold     = 20
+        initial_delay_seconds = 0
+        timeout_seconds       = 1
+        period_seconds        = 1
+        failure_threshold     = 60
         http_get {
           path = "/readyz"
           port = 8080
